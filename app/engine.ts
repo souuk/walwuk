@@ -414,10 +414,23 @@ export function analyze(
   const tt = new Map<string, TTEntry>();
   let nodes = 0;
   let ttHits = 0;
+  let lastReport = started;
 
-  const timedOut = () => performance.now() >= deadline;
   const checkTime = () => {
-    if ((nodes & 255) === 0 && timedOut()) throw new Error("timeout");
+    if ((nodes & 255) !== 0) return;
+    const now = performance.now();
+    if (now - lastReport >= 1000) {
+      lastReport = now;
+      const elapsed = Math.max(1, now - started);
+      onDepth?.({
+        ...completed,
+        nodes,
+        nps: Math.round((nodes * 1000) / elapsed),
+        timeMs: Math.round(elapsed),
+        ttHits,
+      });
+    }
+    if (now >= deadline) throw new Error("timeout");
   };
 
   const orderMoves = (
@@ -516,7 +529,7 @@ export function analyze(
   };
 
   for (let depth = 1; depth <= limits.maxDepth; depth++) {
-    if (timedOut()) break;
+    if (performance.now() >= deadline) break;
     try {
       let alpha = -INF;
       let beta = INF;
