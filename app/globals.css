@@ -135,6 +135,9 @@ button { color: inherit; }
 .best-move-card strong { margin-top: 7px; }
 .best-move-card button { min-height: 36px; margin-top: 14px; }
 .best-move-card p, .metrics, .pv-block, .engine-note { display: none; }
+.github-link { width: 42px; height: 42px; position: fixed; right: 20px; bottom: 20px; z-index: 20; display: block; border: 1px solid var(--line); border-radius: 50%; background-color: rgba(255,249,236,.94); background-image: url("https://github.githubassets.com/favicons/favicon.svg"); background-repeat: no-repeat; background-position: center; background-size: 21px; box-shadow: 0 4px 14px rgba(60,48,36,.1); transition: transform .16s ease, background-color .16s ease; }
+.github-link:hover { transform: translateY(-2px); background-color: #fff9ec; }
+.github-link:focus-visible { outline: 2px solid var(--olive); outline-offset: 3px; }
 
 @media (max-width: 1040px) {
   .workspace { grid-template-columns: 190px minmax(430px, 1fr); }
@@ -155,4 +158,5 @@ button { color: inherit; }
   .board-frame { padding: 8px; }
   .analysis-panel { display: block; padding: 22px 16px; }
   .evaluation-hero { margin-top: 0; }
+  .github-link { width: 40px; height: 40px; right: 14px; bottom: 14px; }
 }

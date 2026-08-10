@@ -305,6 +305,14 @@ export default function WallzAnalyzer() {
           )}
         </aside>
       </section>
+      <a
+        className="github-link"
+        href="https://github.com/souuk/walwuk"
+        target="_blank"
+        rel="noreferrer"
+        aria-label="open walwuk on github"
+        title="github"
+      />
     </main>
   );
 }
