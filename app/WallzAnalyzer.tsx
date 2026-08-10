@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import {
   INITIAL_STATE,
   applyMove,
+  explainMove,
   formatMove,
   isLegalWall,
   legalPawnMoves,
@@ -9,6 +10,7 @@ import {
   winner,
   type AnalysisResult,
   type GameState,
+  type Move,
   type Square,
   type Wall,
 } from "./engine";
@@ -34,6 +36,7 @@ export function WallzAnalyzer() {
   const [maxDepth, setMaxDepth] = useState(8);
   const [rotated, setRotated] = useState(false);
   const [notice, setNotice] = useState("");
+  const [moveExplanation, setMoveExplanation] = useState("");
   const workerRef = useRef<Worker | null>(null);
 
   const legalPawn = useMemo(() => legalPawnMoves(state), [state]);
@@ -82,11 +85,12 @@ export function WallzAnalyzer() {
 
   useEffect(() => () => workerRef.current?.terminate(), []);
 
-  const commitMove = (next: GameState, message: string) => {
+  const commitMove = (next: GameState, message: string, move: Move) => {
     setPast((items) => [...items, cloneState(state)]);
     setFuture([]);
     setState(next);
     setNotice(message);
+    setMoveExplanation(explainMove(state, move, next));
   };
 
   const handleSquare = (square: Square) => {
@@ -99,6 +103,7 @@ export function WallzAnalyzer() {
     commitMove(
       applyMove(state, move),
       `${playerLabel(state.turn)} moved to ${formatMove(move).replace("Pawn ", "")}.`,
+      move,
     );
   };
 
@@ -112,10 +117,8 @@ export function WallzAnalyzer() {
       setNotice("That wall would overlap, cross, or close every route to a goal.");
       return;
     }
-    commitMove(
-      applyMove(state, { kind: "wall", wall }),
-      `${playerLabel(state.turn)} placed ${formatMove({ kind: "wall", wall })}.`,
-    );
+    const move = { kind: "wall", wall } as const;
+    commitMove(applyMove(state, move), `${playerLabel(state.turn)} placed ${formatMove(move)}.`, move);
   };
 
   const reset = () => {
@@ -125,6 +128,7 @@ export function WallzAnalyzer() {
     setState(cloneState(INITIAL_STATE));
     setAnalysis(null);
     setNotice("");
+    setMoveExplanation("");
   };
 
   const undo = useCallback(() => {
@@ -134,6 +138,7 @@ export function WallzAnalyzer() {
     setFuture((items) => [...items, cloneState(state)]);
     setState(previous);
     setNotice("Move undone.");
+    setMoveExplanation("");
   }, [past, state]);
 
   const redo = useCallback(() => {
@@ -143,6 +148,7 @@ export function WallzAnalyzer() {
     setPast((items) => [...items, cloneState(state)]);
     setState(next);
     setNotice("Move restored.");
+    setMoveExplanation("");
   }, [future, state]);
 
   useEffect(() => {
@@ -166,6 +172,7 @@ export function WallzAnalyzer() {
     commitMove(
       applyMove(state, analysis.bestMove),
       `engine line played: ${formatMove(analysis.bestMove, state.turn).replace("Blue", "periwinkle").replace("Amber", "blossom")}.`,
+      analysis.bestMove,
     );
   };
 
@@ -324,6 +331,10 @@ export function WallzAnalyzer() {
               <button disabled={!analysis?.bestMove || thinking} onClick={playBest}>play</button>
             </div>
           )}
+          <div className="move-explanation">
+            <small>move explanation</small>
+            <p>{moveExplanation || "make a move to see how it changed the position."}</p>
+          </div>
         </aside>
       </section>
       <a

@@ -248,6 +248,45 @@ export function staticEvaluation(state: GameState): number {
   return state.turn === 0 ? absolute : -absolute;
 }
 
+export function explainMove(before: GameState, move: Move, after: GameState): string {
+  const player = before.turn;
+  const opponent = (1 - player) as Player;
+  const playerName = player === 0 ? "periwinkle" : "blossom";
+  const ownBefore = shortestPath(before, player).distance;
+  const ownAfter = shortestPath(after, player).distance;
+  const opponentBefore = shortestPath(before, opponent).distance;
+  const opponentAfter = shortestPath(after, opponent).distance;
+  const ownChange = ownBefore - ownAfter;
+  const opponentChange = opponentAfter - opponentBefore;
+  const mobilityBefore = legalPawnMoves(before, player).length;
+  const mobilityAfter = legalPawnMoves(after, player).length;
+
+  if (winner(after) === player) return `${playerName} reaches the goal, so this move wins the game.`;
+
+  if (move.kind === "pawn") {
+    if (ownChange > 0 && opponentChange > 0) {
+      return `this move shortens ${playerName}'s route by ${ownChange} and adds ${opponentChange} to the opponent's route.`;
+    }
+    if (ownChange > 0) return `this move shortens ${playerName}'s route by ${ownChange} move${ownChange === 1 ? "" : "s"}.`;
+    if (opponentChange > 0) return `this move leaves the route length unchanged but adds ${opponentChange} to the opponent's route.`;
+    if (mobilityAfter > mobilityBefore) return `this move keeps the route length steady and opens more movement options.`;
+    if (mobilityAfter < mobilityBefore) return `this move gives up ${mobilityBefore - mobilityAfter} movement option${mobilityBefore - mobilityAfter === 1 ? "" : "s"} without shortening the route.`;
+    return "this move keeps both shortest routes unchanged.";
+  }
+
+  if (opponentChange > 0 && ownChange <= 0) {
+    return `this wall adds ${opponentChange} to the opponent's shortest route while keeping ${playerName}'s route from getting longer.`;
+  }
+  if (opponentChange > ownChange) {
+    return `this wall slows the opponent more than it slows ${playerName}, adding ${opponentChange} route move${opponentChange === 1 ? "" : "s"} for them.`;
+  }
+  if (ownChange > 0 && opponentChange === 0) {
+    return `this wall makes ${playerName}'s route ${ownChange} move${ownChange === 1 ? "" : "s"} longer without delaying the opponent.`;
+  }
+  if (mobilityAfter > mobilityBefore) return "this wall leaves the shortest routes steady and preserves more movement options.";
+  return "this wall changes the local routes without changing either shortest-path distance.";
+}
+
 type Bound = "exact" | "lower" | "upper";
 type TTEntry = { depth: number; score: number; bound: Bound; best: Move | null };
 
