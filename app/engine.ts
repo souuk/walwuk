@@ -252,39 +252,73 @@ export function explainMove(before: GameState, move: Move, after: GameState): st
   const player = before.turn;
   const opponent = (1 - player) as Player;
   const playerName = player === 0 ? "periwinkle" : "blossom";
+  const opponentName = opponent === 0 ? "periwinkle" : "blossom";
   const ownBefore = shortestPath(before, player).distance;
   const ownAfter = shortestPath(after, player).distance;
   const opponentBefore = shortestPath(before, opponent).distance;
   const opponentAfter = shortestPath(after, opponent).distance;
   const ownChange = ownBefore - ownAfter;
   const opponentChange = opponentAfter - opponentBefore;
-  const mobilityBefore = legalPawnMoves(before, player).length;
-  const mobilityAfter = legalPawnMoves(after, player).length;
+  const ownMobilityBefore = legalPawnMoves(before, player).length;
+  const ownMobilityAfter = legalPawnMoves(after, player).length;
+  const opponentMobilityBefore = legalPawnMoves(before, opponent).length;
+  const opponentMobilityAfter = legalPawnMoves(after, opponent).length;
+  const ownMobilityChange = ownMobilityAfter - ownMobilityBefore;
+  const opponentMobilityChange = opponentMobilityAfter - opponentMobilityBefore;
+  const ownRoute = ownBefore === ownAfter
+    ? `${playerName}'s shortest route stays at ${ownAfter} moves`
+    : `${playerName}'s shortest route changes from ${ownBefore} to ${ownAfter} moves`;
+  const opponentRoute = opponentBefore === opponentAfter
+    ? `${opponentName}'s shortest route stays at ${opponentAfter} moves`
+    : `${opponentName}'s shortest route changes from ${opponentBefore} to ${opponentAfter} moves`;
+  const ownOptions = ownMobilityChange === 0
+    ? `${playerName} keeps ${ownMobilityAfter} immediate movement options`
+    : `${playerName}'s immediate movement options change from ${ownMobilityBefore} to ${ownMobilityAfter}`;
+  const opponentOptions = opponentMobilityChange === 0
+    ? `${opponentName} keeps ${opponentMobilityAfter} immediate movement options`
+    : `${opponentName}'s immediate movement options change from ${opponentMobilityBefore} to ${opponentMobilityAfter}`;
 
-  if (winner(after) === player) return `${playerName} reaches the goal, so this move wins the game.`;
+  if (winner(after) === player) {
+    return `${playerName} reaches the goal and the game ends immediately. There is no future reply to calculate because the target row has been reached.`;
+  }
 
   if (move.kind === "pawn") {
+    const reserve = `${playerName} still has ${after.wallsLeft[player]} walls in reserve for a later defensive or attacking turn`;
     if (ownChange > 0 && opponentChange > 0) {
-      return `this move shortens ${playerName}'s route by ${ownChange} and adds ${opponentChange} to the opponent's route.`;
+      return `${ownRoute}, while ${opponentRoute}. It gains a tempo toward the goal and also makes the opponent reroute; ${ownOptions}, and ${reserve}.`;
     }
-    if (ownChange > 0) return `this move shortens ${playerName}'s route by ${ownChange} move${ownChange === 1 ? "" : "s"}.`;
-    if (opponentChange > 0) return `this move leaves the route length unchanged but adds ${opponentChange} to the opponent's route.`;
-    if (mobilityAfter > mobilityBefore) return `this move keeps the route length steady and opens more movement options.`;
-    if (mobilityAfter < mobilityBefore) return `this move gives up ${mobilityBefore - mobilityAfter} movement option${mobilityBefore - mobilityAfter === 1 ? "" : "s"} without shortening the route.`;
-    return "this move keeps both shortest routes unchanged.";
+    if (ownChange > 0) {
+      return `${ownRoute}, while ${opponentRoute}. It makes direct progress without spending a wall; ${ownOptions}, and ${reserve}.`;
+    }
+    if (opponentChange > 0) {
+      return `${ownRoute}, while ${opponentRoute}. The move is less about immediate distance and more about forcing a longer reply; ${opponentOptions}, and ${reserve}.`;
+    }
+    if (ownMobilityChange > 0) {
+      return `${ownRoute}, while ${opponentRoute}. The immediate race is unchanged, but ${ownOptions}, giving future turns more ways to approach or respond.`;
+    }
+    if (ownMobilityChange < 0) {
+      return `${ownRoute}, while ${opponentRoute}. It does not improve the current race and reduces ${playerName}'s choices; the compensation is that ${reserve}.`;
+    }
+    return `${ownRoute}, and ${opponentRoute}. This is a quiet move: it preserves the current race and ${reserve}, leaving the next strategic change for a later turn.`;
   }
 
+  const reserve = `it spends one wall, leaving ${after.wallsLeft[player]} for future turns`;
   if (opponentChange > 0 && ownChange <= 0) {
-    return `this wall adds ${opponentChange} to the opponent's shortest route while keeping ${playerName}'s route from getting longer.`;
+    return `${opponentRoute}, while ${ownRoute}. It buys time by forcing ${opponentName} to reroute without making ${playerName}'s own race longer; ${opponentOptions}, and ${reserve}.`;
   }
-  if (opponentChange > ownChange) {
-    return `this wall slows the opponent more than it slows ${playerName}, adding ${opponentChange} route move${opponentChange === 1 ? "" : "s"} for them.`;
+  if (opponentChange > 0 && opponentChange > ownChange) {
+    return `${opponentRoute}, compared with ${ownRoute}. This is a favorable route trade if the extra delay is worth the wall spent; ${opponentOptions}, and ${reserve}.`;
   }
   if (ownChange > 0 && opponentChange === 0) {
-    return `this wall makes ${playerName}'s route ${ownChange} move${ownChange === 1 ? "" : "s"} longer without delaying the opponent.`;
+    return `${ownRoute}, while ${opponentRoute}. The wall does not delay ${opponentName}, so it trades a future resource for a more constrained route of your own; ${ownOptions}, and ${reserve}.`;
   }
-  if (mobilityAfter > mobilityBefore) return "this wall leaves the shortest routes steady and preserves more movement options.";
-  return "this wall changes the local routes without changing either shortest-path distance.";
+  if (opponentMobilityChange < 0) {
+    return `${ownRoute}, and ${opponentRoute}. The immediate race is unchanged, but ${opponentOptions}, which can make future replies easier to predict; ${reserve}.`;
+  }
+  if (ownMobilityChange < 0) {
+    return `${ownRoute}, and ${opponentRoute}. The wall does not create immediate distance, but it also narrows ${playerName}'s choices; ${reserve}.`;
+  }
+  return `${ownRoute}, and ${opponentRoute}. Its immediate distances are unchanged, so its long-term value is in shaping future routes and reply options; ${reserve}.`;
 }
 
 type Bound = "exact" | "lower" | "upper";
