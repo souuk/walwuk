@@ -58,33 +58,57 @@ export const INITIAL_STATE: GameState = {
   turn: 0,
 };
 
-const sameSquare = (a: Square, b: Square) => a.r === b.r && a.c === b.c;
-const inside = (s: Square) => s.r >= 0 && s.r < SIZE && s.c >= 0 && s.c < SIZE;
+const insideCoords = (r: number, c: number) => r >= 0 && r < SIZE && c >= 0 && c < SIZE;
 const moveKey = (move: Move) =>
   move.kind === "pawn"
     ? `p${move.to.r}${move.to.c}`
     : `${move.wall.o}${move.wall.r}${move.wall.c}`;
 
-export function blocked(a: Square, b: Square, walls: Wall[]): boolean {
-  if (a.r !== b.r) {
-    const row = Math.min(a.r, b.r);
-    return walls.some(
-      (w) => w.o === "h" && w.r === row && (w.c === a.c || w.c + 1 === a.c),
-    );
+function blockedCoords(ar: number, ac: number, br: number, bc: number, walls: Wall[]): boolean {
+  if (ar !== br) {
+    const row = ar < br ? ar : br;
+    for (let i = 0; i < walls.length; i++) {
+      const wall = walls[i];
+      if (wall.o === "h" && wall.r === row && (wall.c === ac || wall.c + 1 === ac)) return true;
+    }
+    return false;
   }
-  const col = Math.min(a.c, b.c);
-  return walls.some(
-    (w) => w.o === "v" && w.c === col && (w.r === a.r || w.r + 1 === a.r),
-  );
+  const col = ac < bc ? ac : bc;
+  for (let i = 0; i < walls.length; i++) {
+    const wall = walls[i];
+    if (wall.o === "v" && wall.c === col && (wall.r === ar || wall.r + 1 === ar)) return true;
+  }
+  return false;
 }
 
-function pathNeighbors(square: Square, walls: Wall[]): Square[] {
-  const out: Square[] = [];
-  for (const [dr, dc] of DIRS) {
-    const next = { r: square.r + dr, c: square.c + dc };
-    if (inside(next) && !blocked(square, next, walls)) out.push(next);
+interface WallMap {
+  horizontal: Uint8Array;
+  vertical: Uint8Array;
+}
+
+function createWallMap(walls: Wall[]): WallMap {
+  const horizontal = new Uint8Array(8 * SIZE);
+  const vertical = new Uint8Array(SIZE * 8);
+  for (let i = 0; i < walls.length; i++) {
+    const wall = walls[i];
+    if (wall.o === "h") {
+      horizontal[wall.r * SIZE + wall.c] = 1;
+      horizontal[wall.r * SIZE + wall.c + 1] = 1;
+    } else {
+      vertical[wall.r * 8 + wall.c] = 1;
+      vertical[(wall.r + 1) * 8 + wall.c] = 1;
+    }
   }
-  return out;
+  return { horizontal, vertical };
+}
+
+function blockedByMap(ar: number, ac: number, br: number, bc: number, map: WallMap): boolean {
+  if (ar !== br) return map.horizontal[(ar < br ? ar : br) * SIZE + ac] === 1;
+  return map.vertical[ar * 8 + (ac < bc ? ac : bc)] === 1;
+}
+
+export function blocked(a: Square, b: Square, walls: Wall[]): boolean {
+  return blockedCoords(a.r, a.c, b.r, b.c, walls);
 }
 
 export function shortestPath(
@@ -93,30 +117,40 @@ export function shortestPath(
 ): { distance: number; path: Square[] } {
   const start = state.pawns[player];
   const targetRow = player === 0 ? 0 : 8;
-  const queue: Square[] = [start];
-  const seen = new Set([`${start.r},${start.c}`]);
-  const parent = new Map<string, Square>();
+  const startIndex = start.r * SIZE + start.c;
+  const queue = new Uint8Array(SIZE * SIZE);
+  const seen = new Uint8Array(SIZE * SIZE);
+  const parent = new Int16Array(SIZE * SIZE);
+  const wallMap = createWallMap(state.walls);
+  parent.fill(-1);
+  queue[0] = startIndex;
+  seen[startIndex] = 1;
+  let tail = 1;
   let head = 0;
-  while (head < queue.length) {
-    const current = queue[head++];
-    if (current.r === targetRow) {
-      const path = [current];
-      let cursor = current;
-      while (!sameSquare(cursor, start)) {
-        const prev = parent.get(`${cursor.r},${cursor.c}`);
-        if (!prev) break;
-        path.push(prev);
-        cursor = prev;
+  while (head < tail) {
+    const currentIndex = queue[head++];
+    const currentRow = Math.floor(currentIndex / SIZE);
+    const currentColumn = currentIndex % SIZE;
+    if (currentRow === targetRow) {
+      const path: Square[] = [];
+      let cursor = currentIndex;
+      while (cursor !== -1) {
+        path.push({ r: Math.floor(cursor / SIZE), c: cursor % SIZE });
+        if (cursor === startIndex) break;
+        cursor = parent[cursor];
       }
       path.reverse();
       return { distance: path.length - 1, path };
     }
-    for (const next of pathNeighbors(current, state.walls)) {
-      const key = `${next.r},${next.c}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      parent.set(key, current);
-      queue.push(next);
+    for (const [dr, dc] of DIRS) {
+      const nextRow = currentRow + dr;
+      const nextColumn = currentColumn + dc;
+      if (!insideCoords(nextRow, nextColumn) || blockedByMap(currentRow, currentColumn, nextRow, nextColumn, wallMap)) continue;
+      const nextIndex = nextRow * SIZE + nextColumn;
+      if (seen[nextIndex]) continue;
+      seen[nextIndex] = 1;
+      parent[nextIndex] = currentIndex;
+      queue[tail++] = nextIndex;
     }
   }
   return { distance: 99, path: [] };
@@ -126,32 +160,42 @@ export function legalPawnMoves(state: GameState, player = state.turn): PawnMove[
   const own = state.pawns[player];
   const other = state.pawns[(1 - player) as Player];
   const destinations: Square[] = [];
+  const seen = new Uint8Array(SIZE * SIZE);
+  const wallMap = createWallMap(state.walls);
+  const addDestination = (r: number, c: number) => {
+    const index = r * SIZE + c;
+    if (seen[index]) return;
+    seen[index] = 1;
+    destinations.push({ r, c });
+  };
 
   for (const [dr, dc] of DIRS) {
-    const adjacent = { r: own.r + dr, c: own.c + dc };
-    if (!inside(adjacent) || blocked(own, adjacent, state.walls)) continue;
-    if (!sameSquare(adjacent, other)) {
-      destinations.push(adjacent);
+    const adjacentRow = own.r + dr;
+    const adjacentColumn = own.c + dc;
+    if (!insideCoords(adjacentRow, adjacentColumn) || blockedByMap(own.r, own.c, adjacentRow, adjacentColumn, wallMap)) continue;
+    if (adjacentRow !== other.r || adjacentColumn !== other.c) {
+      addDestination(adjacentRow, adjacentColumn);
       continue;
     }
 
-    const beyond = { r: other.r + dr, c: other.c + dc };
-    if (inside(beyond) && !blocked(other, beyond, state.walls)) {
-      destinations.push(beyond);
+    const beyondRow = other.r + dr;
+    const beyondColumn = other.c + dc;
+    if (insideCoords(beyondRow, beyondColumn) && !blockedByMap(other.r, other.c, beyondRow, beyondColumn, wallMap)) {
+      addDestination(beyondRow, beyondColumn);
       continue;
     }
 
     const sides = dr === 0 ? [[-1, 0], [1, 0]] : [[0, -1], [0, 1]];
     for (const [sr, sc] of sides) {
-      const diagonal = { r: other.r + sr, c: other.c + sc };
-      if (inside(diagonal) && !blocked(other, diagonal, state.walls)) {
-        destinations.push(diagonal);
+      const diagonalRow = other.r + sr;
+      const diagonalColumn = other.c + sc;
+      if (insideCoords(diagonalRow, diagonalColumn) && !blockedByMap(other.r, other.c, diagonalRow, diagonalColumn, wallMap)) {
+        addDestination(diagonalRow, diagonalColumn);
       }
     }
   }
 
-  const unique = new Map(destinations.map((s) => [`${s.r},${s.c}`, s]));
-  return [...unique.values()].map((to) => ({ kind: "pawn", to }));
+  return destinations.map((to) => ({ kind: "pawn", to }));
 }
 
 export function isLegalWall(state: GameState, wall: Wall): boolean {
@@ -207,13 +251,15 @@ function candidatesFromPath(path: Square[], out: Map<string, Wall>) {
   }
 }
 
-function candidateWalls(state: GameState): WallMove[] {
+type PathResult = ReturnType<typeof shortestPath>;
+
+function candidateWalls(state: GameState, us?: PathResult, them?: PathResult): WallMove[] {
   if (state.wallsLeft[state.turn] <= 0) return [];
   const candidates = new Map<string, Wall>();
-  const us = shortestPath(state, state.turn);
-  const them = shortestPath(state, (1 - state.turn) as Player);
-  candidatesFromPath(them.path, candidates);
-  candidatesFromPath(us.path.slice(0, 5), candidates);
+  const currentPath = us ?? shortestPath(state, state.turn);
+  const opposingPath = them ?? shortestPath(state, (1 - state.turn) as Player);
+  candidatesFromPath(opposingPath.path, candidates);
+  candidatesFromPath(currentPath.path.slice(0, 5), candidates);
 
   // Include nearby tactical walls so jumps and local funnels are not missed.
   for (const pawn of state.pawns) {
@@ -233,8 +279,8 @@ function candidateWalls(state: GameState): WallMove[] {
     .map((wall) => ({ kind: "wall", wall }));
 }
 
-function generateMoves(state: GameState): Move[] {
-  return [...legalPawnMoves(state), ...candidateWalls(state)];
+function generateMoves(state: GameState, us?: PathResult, them?: PathResult): Move[] {
+  return [...legalPawnMoves(state), ...candidateWalls(state, us, them)];
 }
 
 function evaluateAbsolute(state: GameState): number {
@@ -339,11 +385,13 @@ type Bound = "exact" | "lower" | "upper";
 type TTEntry = { depth: number; score: number; bound: Bound; best: Move | null };
 
 function stateKey(state: GameState): string {
-  const walls = [...state.walls]
-    .sort((a, b) => a.o.localeCompare(b.o) || a.r - b.r || a.c - b.c)
-    .map((w) => `${w.o}${w.r}${w.c}`)
-    .join("");
-  return `${state.turn}|${state.pawns[0].r}${state.pawns[0].c}|${state.pawns[1].r}${state.pawns[1].c}|${state.wallsLeft.join(",")}|${walls}`;
+  const walls = new Array<number>(state.walls.length);
+  for (let i = 0; i < state.walls.length; i++) {
+    const wall = state.walls[i];
+    walls[i] = (wall.o === "h" ? 0 : 1) * 64 + wall.r * 8 + wall.c;
+  }
+  walls.sort((a, b) => a - b);
+  return `${state.turn}|${state.pawns[0].r}${state.pawns[0].c}|${state.pawns[1].r}${state.pawns[1].c}|${state.wallsLeft.join(",")}|${walls.join(",")}`;
 }
 
 export function formatMove(move: Move, player?: Player): string {
@@ -372,9 +420,13 @@ export function analyze(
     if ((nodes & 255) === 0 && timedOut()) throw new Error("timeout");
   };
 
-  const orderMoves = (state: GameState, moves: Move[], ttMove: Move | null) => {
-    const beforeUs = shortestPath(state, state.turn).distance;
-    const beforeThem = shortestPath(state, (1 - state.turn) as Player).distance;
+  const orderMoves = (
+    state: GameState,
+    moves: Move[],
+    ttMove: Move | null,
+    beforeUs: number,
+    beforeThem: number,
+  ) => {
     return moves
       .map((move) => {
         let priority = ttMove && moveKey(ttMove) === moveKey(move) ? 1_000_000 : 0;
@@ -412,7 +464,15 @@ export function analyze(
       if (alpha >= beta) return cached.score;
     }
 
-    const moves = orderMoves(state, generateMoves(state), cached?.best ?? null);
+    const currentPath = shortestPath(state, state.turn);
+    const opposingPath = shortestPath(state, (1 - state.turn) as Player);
+    const moves = orderMoves(
+      state,
+      generateMoves(state, currentPath, opposingPath),
+      cached?.best ?? null,
+      currentPath.distance,
+      opposingPath.distance,
+    );
     if (!moves.length) return staticEvaluation(state);
     let bestScore = -INF;
     let best: Move | null = null;
