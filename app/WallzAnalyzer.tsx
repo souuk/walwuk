@@ -18,6 +18,7 @@ type WorkerMessage = { type: "progress" | "done"; result: AnalysisResult };
 const cloneState = (state: GameState): GameState => JSON.parse(JSON.stringify(state));
 const sameSquare = (a: Square, b: Square) => a.r === b.r && a.c === b.c;
 const THINK_TIMES = [250, 500, 750, 1000, 1500, 2000, 3000, 5000, 7500, 10000, 15000, 30000];
+const playerLabel = (player: 0 | 1) => player === 0 ? "periwinkle" : "blossom";
 
 export default function WallzAnalyzer() {
   const [state, setState] = useState<GameState>(cloneState(INITIAL_STATE));
@@ -93,7 +94,7 @@ export default function WallzAnalyzer() {
     }
     commitMove(
       applyMove(state, move),
-      `${state.turn === 0 ? "Blue" : "Amber"} moved to ${formatMove(move).replace("Pawn ", "")}.`,
+      `${playerLabel(state.turn)} moved to ${formatMove(move).replace("Pawn ", "")}.`,
     );
   };
 
@@ -108,7 +109,7 @@ export default function WallzAnalyzer() {
     }
     commitMove(
       applyMove(state, { kind: "wall", wall }),
-      `${state.turn === 0 ? "Blue" : "Amber"} placed ${formatMove({ kind: "wall", wall })}.`,
+      `${playerLabel(state.turn)} placed ${formatMove({ kind: "wall", wall })}.`,
     );
   };
 
@@ -159,7 +160,7 @@ export default function WallzAnalyzer() {
     if (currentWinner !== null || !analysis?.bestMove) return;
     commitMove(
       applyMove(state, analysis.bestMove),
-      `Engine line played: ${formatMove(analysis.bestMove, state.turn)}.`,
+      `engine line played: ${formatMove(analysis.bestMove, state.turn).replace("Blue", "periwinkle").replace("Amber", "blossom")}.`,
     );
   };
 
@@ -186,17 +187,21 @@ export default function WallzAnalyzer() {
     };
   };
 
-  const blueScore = analysis ? analysis.score * (state.turn === 0 ? 1 : -1) : 0;
+  const blueScore = currentWinner !== null
+    ? currentWinner === 0 ? 100_000 : -100_000
+    : analysis ? analysis.score * (state.turn === 0 ? 1 : -1) : 0;
   const evalPercent = Math.max(8, Math.min(92, 50 + blueScore / 12));
-  const evaluationLabel = !engineEnabled
+  const evaluationLabel = currentWinner !== null
+    ? `${playerLabel(currentWinner)} wins`
+    : !engineEnabled
     ? "engine off"
     : !analysis
       ? thinking ? "calculating…" : "—"
       : Math.abs(blueScore) > 90_000
-        ? blueScore > 0 ? "blue has a forced win" : "amber has a forced win"
+        ? blueScore > 0 ? "periwinkle has a forced win" : "blossom has a forced win"
         : blueScore === 0
           ? "even"
-          : `${blueScore > 0 ? "blue" : "amber"} +${(Math.abs(blueScore) / 100).toFixed(2)} moves`;
+          : `${blueScore > 0 ? "periwinkle" : "blossom"} +${(Math.abs(blueScore) / 100).toFixed(2)} moves`;
 
   const displaySquare = (displayRow: number, displayColumn: number): Square => rotated
     ? { r: 8 - displayRow, c: 8 - displayColumn }
@@ -220,8 +225,8 @@ export default function WallzAnalyzer() {
           </div>
 
           <div className="wall-reserves">
-            <div><span><i className="blue-chip" />blue</span><strong>{state.wallsLeft[0]}</strong></div>
-            <div><span><i className="amber-chip" />amber</span><strong>{state.wallsLeft[1]}</strong></div>
+            <div><span><i className="blue-chip" />periwinkle</span><strong>{state.wallsLeft[0]}</strong></div>
+            <div><span><i className="amber-chip" />blossom</span><strong>{state.wallsLeft[1]}</strong></div>
           </div>
           <div className="engine-toggle-card">
             <strong>engine</strong>
@@ -296,7 +301,7 @@ export default function WallzAnalyzer() {
           </div>
           <div className="status-line">
             <span>{notice}</span>
-            <span>{currentWinner !== null ? `${currentWinner === 0 ? "blue" : "amber"} wins` : `paths ${bluePath.distance} / ${amberPath.distance}`}</span>
+            <span>{currentWinner !== null ? `${playerLabel(currentWinner)} wins` : `paths ${bluePath.distance} / ${amberPath.distance}`}</span>
           </div>
         </section>
 
@@ -304,12 +309,12 @@ export default function WallzAnalyzer() {
           <div className="evaluation-hero">
             <small>eval</small><strong>{evaluationLabel}</strong>
             <div className={`eval-track ${!engineEnabled ? "disabled" : ""}`}><div className="eval-blue" style={{ width: `${engineEnabled ? evalPercent : 50}%` }} /><i style={{ left: `${engineEnabled ? evalPercent : 50}%` }} /></div>
-            <div className="eval-ends"><span>blue</span><span>amber</span></div>
+            <div className="eval-ends"><span>periwinkle</span><span>blossom</span></div>
           </div>
           {currentWinner === null && (
             <div className="best-move-card">
               <small>best</small>
-              <strong>{analysis?.bestMove ? formatMove(analysis.bestMove, state.turn) : engineEnabled ? "reading the board" : "analysis paused"}</strong>
+              <strong>{analysis?.bestMove ? formatMove(analysis.bestMove, state.turn).replace("Blue", "periwinkle").replace("Amber", "blossom") : engineEnabled ? "reading the board" : "analysis paused"}</strong>
               <button disabled={!analysis?.bestMove || thinking} onClick={playBest}>play</button>
             </div>
           )}
