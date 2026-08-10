@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   INITIAL_STATE,
   applyMove,
@@ -9,7 +9,6 @@ import {
   winner,
   type AnalysisResult,
   type GameState,
-  type Player,
   type Square,
   type Wall,
 } from "./engine";
@@ -28,7 +27,8 @@ export default function WallzAnalyzer() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [timeMs, setTimeMs] = useState(1200);
   const [maxDepth, setMaxDepth] = useState(8);
-  const [notice, setNotice] = useState("Blue begins. Move a circle or place a wall.");
+  const [rotated, setRotated] = useState(false);
+  const [notice, setNotice] = useState("");
   const workerRef = useRef<Worker | null>(null);
 
   const legalPawn = useMemo(() => legalPawnMoves(state), [state]);
@@ -41,15 +41,19 @@ export default function WallzAnalyzer() {
     workerRef.current = null;
 
     if (!engineEnabled || currentWinner !== null) {
-      setThinking(false);
-      if (!engineEnabled) setAnalysis(null);
-      return;
+      const timeout = window.setTimeout(() => {
+        setThinking(false);
+        if (!engineEnabled) setAnalysis(null);
+      }, 0);
+      return () => window.clearTimeout(timeout);
     }
 
     const worker = new Worker(new URL("./engine-worker.ts", import.meta.url), { type: "module" });
     workerRef.current = worker;
-    setThinking(true);
-    setAnalysis(null);
+    const startTimeout = window.setTimeout(() => {
+      setThinking(true);
+      setAnalysis(null);
+    }, 0);
     worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
       setAnalysis(event.data.result);
       if (event.data.type === "done") {
@@ -65,6 +69,7 @@ export default function WallzAnalyzer() {
     worker.postMessage({ state, limits: { timeMs, maxDepth } });
 
     return () => {
+      window.clearTimeout(startTimeout);
       worker.terminate();
       if (workerRef.current === worker) workerRef.current = null;
     };
@@ -112,26 +117,42 @@ export default function WallzAnalyzer() {
     setFuture([]);
     setState(cloneState(INITIAL_STATE));
     setAnalysis(null);
-    setNotice("Blue begins. Move a circle or place a wall.");
+    setNotice("");
   };
 
-  const undo = () => {
+  const undo = useCallback(() => {
     const previous = past.at(-1);
     if (!previous) return;
     setPast((items) => items.slice(0, -1));
     setFuture((items) => [...items, cloneState(state)]);
     setState(previous);
     setNotice("Move undone.");
-  };
+  }, [past, state]);
 
-  const redo = () => {
+  const redo = useCallback(() => {
     const next = future.at(-1);
     if (!next) return;
     setFuture((items) => items.slice(0, -1));
     setPast((items) => [...items, cloneState(state)]);
     setState(next);
     setNotice("Move restored.");
-  };
+  }, [future, state]);
+
+  useEffect(() => {
+    const handleHistoryKeys = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.matches("input, textarea, select, [contenteditable='true']")) return;
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        undo();
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", handleHistoryKeys);
+    return () => window.removeEventListener("keydown", handleHistoryKeys);
+  }, [undo, redo]);
 
   const playBest = () => {
     if (!analysis?.bestMove) return;
@@ -143,16 +164,21 @@ export default function WallzAnalyzer() {
 
   const toGridRow = (r: number) => r * 2 + 1;
   const toGridCol = (c: number) => c * 2 + 1;
-  const wallStyle = (wall: Wall) =>
-    wall.o === "h"
-      ? { gridRow: `${wall.r * 2 + 2}`, gridColumn: `${wall.c * 2 + 1} / span 3` }
-      : { gridRow: `${wall.r * 2 + 1} / span 3`, gridColumn: `${wall.c * 2 + 2}` };
+  const wallStyle = (wall: Wall) => {
+    const r = rotated ? 7 - wall.r : wall.r;
+    const c = rotated ? 7 - wall.c : wall.c;
+    return wall.o === "h"
+      ? { gridRow: `${r * 2 + 2}`, gridColumn: `${c * 2 + 1} / span 3` }
+      : { gridRow: `${r * 2 + 1} / span 3`, gridColumn: `${c * 2 + 2}` };
+  };
 
   const circleStyle = (square: Square) => {
-    const leftPercent = ((square.c + 0.225) * 100) / 9;
-    const topPercent = ((square.r + 0.225) * 100) / 9;
-    const leftPixels = square.c - 1.8;
-    const topPixels = square.r - 1.8;
+    const c = rotated ? 8 - square.c : square.c;
+    const r = rotated ? 8 - square.r : square.r;
+    const leftPercent = ((c + 0.225) * 100) / 9;
+    const topPercent = ((r + 0.225) * 100) / 9;
+    const leftPixels = c - 1.8;
+    const topPixels = r - 1.8;
     return {
       left: `calc(${leftPercent}% + ${leftPixels}px)`,
       top: `calc(${topPercent}% + ${topPixels}px)`,
@@ -171,12 +197,15 @@ export default function WallzAnalyzer() {
           ? "Even"
           : `${blueScore > 0 ? "Blue" : "Amber"} +${(Math.abs(blueScore) / 100).toFixed(2)} moves`;
 
+  const displaySquare = (displayRow: number, displayColumn: number): Square => rotated
+    ? { r: 8 - displayRow, c: 8 - displayColumn }
+    : { r: displayRow, c: displayColumn };
+
   return (
     <main className="app-shell">
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark">W</span>
-          <div><h1>Walver</h1><p>Wallz position laboratory</p></div>
+          <h1>Walwuk</h1>
         </div>
         <div className={`engine-status ${thinking ? "thinking" : ""}`}>
           <i />{thinking ? "Calculating" : engineEnabled ? "Engine on" : "Engine off"}
@@ -185,28 +214,19 @@ export default function WallzAnalyzer() {
 
       <section className="workspace">
         <aside className="panel controls-panel">
-          <div className="section-heading"><span>01</span><h2>Game</h2></div>
           <div className="game-actions">
             <button className="new-game" onClick={reset}>New game</button>
-            <button className="history-button" disabled={!past.length} onClick={undo} aria-label="Undo move">↶<small>Undo</small></button>
-            <button className="history-button" disabled={!future.length} onClick={redo} aria-label="Redo move">↷<small>Redo</small></button>
-          </div>
-
-          <div className="turn-indicator" aria-label={`${state.turn === 0 ? "Blue" : "Amber"} to play`}>
-            <i className={state.turn === 0 ? "blue-chip" : "amber-chip"} />
-            <strong>{state.turn === 0 ? "Blue" : "Amber"}</strong>
-            <span>to play</span>
+            <button className="history-button" disabled={!past.length} onClick={undo} title="Left arrow" aria-label="Undo move">←<small>Undo</small></button>
+            <button className="history-button" disabled={!future.length} onClick={redo} title="Right arrow" aria-label="Redo move">→<small>Redo</small></button>
+            <button className="history-button" onClick={() => setRotated((value) => !value)} aria-label="Rotate board">↻<small>Rotate</small></button>
           </div>
 
           <div className="wall-reserves">
             <div><span><i className="blue-chip" />Blue</span><strong>{state.wallsLeft[0]}</strong></div>
             <div><span><i className="amber-chip" />Amber</span><strong>{state.wallsLeft[1]}</strong></div>
           </div>
-          <p className="helper">Click a marked square to move. Click an empty channel to place a wall. Placed walls can only be reversed with Undo.</p>
-
-          <div className="section-heading analysis-settings"><span>02</span><h2>Engine</h2></div>
           <div className="engine-toggle-card">
-            <div><strong>Automatic analysis</strong><span>Refresh after every move</span></div>
+            <strong>Engine</strong>
             <button
               type="button"
               className={`toggle ${engineEnabled ? "on" : ""}`}
@@ -223,22 +243,22 @@ export default function WallzAnalyzer() {
 
         <section className="board-column">
           <div className="board-frame">
-            <div className="board" aria-label="Wallz board">
-              {[...Array(9)].flatMap((_, r) => [...Array(9)].map((__, c) => {
-                const square = { r, c };
+            <div className="board" aria-label={`Wallz board, ${rotated ? "rotated" : "standard"} orientation`}>
+              {[...Array(9)].flatMap((_, displayRow) => [...Array(9)].map((__, displayColumn) => {
+                const square = displaySquare(displayRow, displayColumn);
                 const isLegal = legalPawn.some((move) => sameSquare(move.to, square));
                 const pathBlue = engineEnabled && bluePath.path.some((item) => sameSquare(item, square));
                 const pathAmber = engineEnabled && amberPath.path.some((item) => sameSquare(item, square));
                 return (
                   <button
-                    key={`${r}-${c}`}
-                    className={`square ${(r + c) % 2 ? "dark" : "light"} ${isLegal ? "legal" : ""} ${pathBlue ? "blue-path" : ""} ${pathAmber ? "amber-path" : ""}`}
-                    style={{ gridRow: toGridRow(r), gridColumn: toGridCol(c) }}
+                    key={`${square.r}-${square.c}`}
+                    className={`square ${(square.r + square.c) % 2 ? "dark" : "light"} ${isLegal ? "legal" : ""} ${pathBlue ? "blue-path" : ""} ${pathAmber ? "amber-path" : ""}`}
+                    style={{ gridRow: toGridRow(displayRow), gridColumn: toGridCol(displayColumn) }}
                     onClick={() => handleSquare(square)}
-                    aria-label={`${String.fromCharCode(97 + c)}${9 - r}${isLegal ? ", legal destination" : ""}`}
+                    aria-label={`${String.fromCharCode(97 + square.c)}${9 - square.r}${isLegal ? ", legal destination" : ""}`}
                   >
-                    {c === 0 && <span className="rank-label">{9 - r}</span>}
-                    {r === 8 && <span className="file-label">{String.fromCharCode(97 + c)}</span>}
+                    {displayColumn === 0 && <span className="rank-label">{9 - square.r}</span>}
+                    {displayRow === 8 && <span className="file-label">{String.fromCharCode(97 + square.c)}</span>}
                     {isLegal && <span className="legal-dot" />}
                   </button>
                 );
@@ -272,33 +292,16 @@ export default function WallzAnalyzer() {
         </section>
 
         <aside className="panel analysis-panel">
-          <div className="section-heading"><span>03</span><h2>Evaluation</h2></div>
           <div className="evaluation-hero">
-            <small>Position score</small><strong>{evaluationLabel}</strong>
+            <small>Eval</small><strong>{evaluationLabel}</strong>
             <div className={`eval-track ${!engineEnabled ? "disabled" : ""}`}><div className="eval-blue" style={{ width: `${engineEnabled ? evalPercent : 50}%` }} /><i style={{ left: `${engineEnabled ? evalPercent : 50}%` }} /></div>
             <div className="eval-ends"><span>Blue</span><span>Amber</span></div>
           </div>
           <div className="best-move-card">
-            <small>Engine choice</small>
+            <small>Best</small>
             <strong>{analysis?.bestMove ? formatMove(analysis.bestMove, state.turn) : engineEnabled ? "Reading the board" : "Analysis paused"}</strong>
-            <p>{analysis?.bestMove?.kind === "wall" ? "This wall creates the strongest tempo-adjusted detour." : analysis?.bestMove ? "This circle move leads the strongest searched race." : engineEnabled ? "A recommendation appears after the current search." : "Switch the engine on to evaluate each position automatically."}</p>
-            <button disabled={!analysis?.bestMove || thinking} onClick={playBest}>Play engine move</button>
+            <button disabled={!analysis?.bestMove || thinking} onClick={playBest}>Play</button>
           </div>
-          <div className="metrics">
-            <div><small>Depth</small><strong>{analysis?.depth ?? 0}<em> ply</em></strong></div>
-            <div><small>Nodes</small><strong>{analysis ? analysis.nodes.toLocaleString() : "0"}</strong></div>
-            <div><small>Speed</small><strong>{analysis ? `${Math.round(analysis.nps / 1000)}k` : "0k"}<em> n/s</em></strong></div>
-            <div><small>TT hits</small><strong>{analysis?.ttHits.toLocaleString() ?? "0"}</strong></div>
-          </div>
-          <div className="pv-block">
-            <div className="pv-title"><span>Principal variation</span><small>{analysis ? `${analysis.timeMs} ms` : "—"}</small></div>
-            {analysis?.pv.length ? (
-              <ol>{analysis.pv.map((move, index) => (
-                <li key={`${formatMove(move)}-${index}`}><span>{index + 1}</span><b>{index % 2 === 0 ? (state.turn === 0 ? "Blue" : "Amber") : (state.turn === 0 ? "Amber" : "Blue")}</b><code>{formatMove(move)}</code></li>
-              ))}</ol>
-            ) : <div className="empty-pv">{engineEnabled ? "The calculated line will appear here." : "Automatic analysis is switched off."}</div>}
-          </div>
-          <div className="engine-note"><span>αβ</span><p><strong>Stockfish-inspired search</strong>Iterative deepening, alpha–beta pruning, move ordering, and a transposition table—refreshed after every move.</p></div>
         </aside>
       </section>
     </main>

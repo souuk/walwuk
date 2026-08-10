@@ -1,4 +1,4 @@
-name: Deploy Walver to GitHub Pages
+name: Deploy Walwuk to GitHub Pages
 
 on:
   push:
