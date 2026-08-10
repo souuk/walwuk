@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   INITIAL_STATE,
   applyMove,
@@ -265,14 +265,15 @@ export function WallzAnalyzer() {
             <div className="board" aria-label={`Wallz board, ${rotated ? "rotated" : "standard"} orientation`}>
               {[...Array(9)].flatMap((_, displayRow) => [...Array(9)].map((__, displayColumn) => {
                 const square = displaySquare(displayRow, displayColumn);
-                const isLegal = legalPawn.some((move) => sameSquare(move.to, square));
+                const isLegal = currentWinner === null && legalPawn.some((move) => sameSquare(move.to, square));
                 const pathBlue = engineEnabled && bluePath.path.some((item) => sameSquare(item, square));
                 const pathAmber = engineEnabled && amberPath.path.some((item) => sameSquare(item, square));
+                const winnerClass = currentWinner === 0 ? "winner-periwinkle" : currentWinner === 1 ? "winner-blossom" : "";
                 return (
                   <button
                     key={`${square.r}-${square.c}`}
-                    className={`square ${(square.r + square.c) % 2 ? "dark" : "light"} ${isLegal ? "legal" : ""} ${pathBlue ? "blue-path" : ""} ${pathAmber ? "amber-path" : ""}`}
-                    style={{ gridRow: toGridRow(displayRow), gridColumn: toGridCol(displayColumn) }}
+                    className={`square ${(square.r + square.c) % 2 ? "dark" : "light"} ${isLegal ? "legal" : ""} ${pathBlue ? "blue-path" : ""} ${pathAmber ? "amber-path" : ""} ${winnerClass}`}
+                    style={{ gridRow: toGridRow(displayRow), gridColumn: toGridCol(displayColumn), "--win-delay": `${(displayRow * 9 + displayColumn) * 12}ms` } as CSSProperties}
                     onClick={() => handleSquare(square)}
                     aria-label={`${String.fromCharCode(97 + square.c)}${9 - square.r}${isLegal ? ", legal destination" : ""}`}
                   >
