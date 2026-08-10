@@ -17,8 +17,9 @@ import {
 } from "./engine";
 
 interface WorkerMessage {
-  type: "progress" | "done";
-  result: AnalysisResult;
+  type: "progress" | "done" | "warning";
+  result?: AnalysisResult;
+  message?: string;
 }
 
 const cloneState = (state: GameState): GameState => JSON.parse(JSON.stringify(state));
@@ -65,6 +66,11 @@ export function WallzAnalyzer() {
       setAnalysis(null);
     }, 0);
     worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
+      if (event.data.type === "warning") {
+        setNotice(event.data.message ?? "the engine switched to its compatibility mode.");
+        return;
+      }
+      if (!event.data.result) return;
       setAnalysis(event.data.result);
       if (event.data.type === "done") {
         setThinking(false);

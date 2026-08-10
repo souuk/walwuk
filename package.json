@@ -6,10 +6,18 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "predev": "npm run engine:build",
     "dev": "vite --config vite.pages.config.ts",
+    "prebuild": "npm run engine:build",
     "build": "vite build --config vite.pages.config.ts",
-    "test": "npm run build",
-    "lint": "eslint . --ignore-pattern dist-pages"
+    "test": "npm run engine:test && npm run build",
+    "lint": "eslint . --ignore-pattern dist-pages --ignore-pattern public/engine",
+    "typecheck": "tsc --noEmit",
+    "engine:build": "node scripts/build-engine.mjs",
+    "engine:test:compile": "tsc app/engine.ts --target ES2022 --lib ES2022,DOM --module ES2022 --moduleResolution bundler --outDir .engine-test --skipLibCheck",
+    "engine:test": "npm run engine:build && npm run engine:test:compile && node scripts/engine-parity.mjs",
+    "engine:test:full": "npm run engine:build && npm run engine:test:compile && node scripts/engine-parity.mjs --full",
+    "engine:benchmark": "npm run engine:build && npm run engine:test:compile && node scripts/engine-benchmark.mjs"
   },
   "dependencies": {
     "react": "19.2.6",

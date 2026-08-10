@@ -1,6 +1,6 @@
 # walwuk
 
-walwuk is a browser-based position analyzer for the Wallz board game. It combines an interactive 9×9 board with a small, Stockfish-inspired game-search engine that evaluates routes, walls, mobility, and forced wins.
+walwuk is a browser-based position analyzer for the Wallz board game. It combines an interactive 9×9 board with a C++/WebAssembly, Stockfish-inspired search engine that evaluates routes, walls, mobility, and forced wins.
 
 **[play walwuk](https://souuk.github.io/walwuk/)**
 
@@ -24,7 +24,7 @@ walwuk is a browser-based position analyzer for the Wallz board game. It combine
 
 walwuk lets you construct and analyze positions rather than forcing you to play a complete game from the starting position. You can move either pawn, place legal walls, rotate the board, and use undo/redo to inspect alternatives.
 
-The engine can be toggled on or off. When it is enabled, it searches from the current position and reports the strongest move it found within the selected time and depth limits. The engine runs in a Web Worker, so searching does not freeze the board controls.
+The engine can be toggled on or off. When it is enabled, it searches from the current position and reports the strongest move it found within the selected time and depth limits. The C++ engine runs as WebAssembly inside a Web Worker, so searching does not freeze the board controls. A TypeScript implementation remains as a temporary compatibility fallback and correctness reference.
 
 ### Features
 
@@ -91,7 +91,23 @@ Greater depth usually gives the engine more tactical foresight, but it also incr
 
 ## How the algorithm works
 
-The engine is implemented in [`app/engine.ts`](app/engine.ts) and executed by [`app/engine-worker.ts`](app/engine-worker.ts). At a high level, every analysis follows this pipeline:
+The production search is implemented in [`engine-native/walwuk_engine.cpp`](engine-native/walwuk_engine.cpp), compiled to WebAssembly with Emscripten, and executed through [`app/engine-worker.ts`](app/engine-worker.ts). [`app/engine.ts`](app/engine.ts) contains the readable TypeScript rules, UI helpers, move explanations, and temporary reference search.
+
+```text
+react interface
+    ↓ position + limits
+web worker
+    ↓ one packed position
+c++ webassembly engine
+    ↓ progress about once per second
+web worker
+    ↓ progress / final result
+react interface
+```
+
+JavaScript crosses into WebAssembly only when a search starts, when progress is reported, and when the final result is returned. Move generation, pathfinding, evaluation, recursion, pruning, and caching stay inside native code during a search.
+
+At a high level, every analysis follows this pipeline:
 
 ```text
 current position
@@ -307,7 +323,9 @@ This does not mean the engine has proven every skipped move is objectively losin
 
 ### 10. Caching repeated positions
 
-Different move orders can lead to the same position. walwuk stores analyzed positions in a transposition table:
+Different move orders can lead to the same position. The C++ engine stores analyzed positions in a fixed-size, contiguous transposition table. Each entry contains both wall masks, packed pawn/reserve/turn metadata, the searched depth, score bound, and best move.
+
+The readable TypeScript reference represents the same identity with a map:
 
 ```ts
 const tt = new Map<string, TTEntry>();
@@ -321,7 +339,7 @@ return `${state.turn}|${state.pawns[0].r}${state.pawns[0].c}|` +
   `${state.wallsLeft.join(",")}|${walls}`;
 ```
 
-Entries record the search depth, score bound, and best move. A cached result is reused only when it was searched deeply enough:
+The native table hashes that identity to a slot but verifies the complete packed identity before using an entry. A collision can therefore replace or miss a cached result, but cannot return another position's score. A result is reused only when it was searched deeply enough:
 
 ```ts
 if (cached && cached.depth >= depth) {
@@ -382,7 +400,7 @@ const started = performance.now();
 const deadline = started + limits.timeMs;
 ```
 
-It checks the clock every 256 searched nodes:
+Both engines check the clock every 256 searched nodes. The TypeScript reference expresses the check as:
 
 ```ts
 if ((nodes & 255) === 0 && timedOut()) {
@@ -390,7 +408,7 @@ if ((nodes & 255) === 0 && timedOut()) {
 }
 ```
 
-The search stops cleanly and returns the last fully completed depth. This is why increasing thinking time can improve the result without making the interface wait indefinitely.
+The native search uses a timeout flag instead of throwing through C++ search frames. Both engines stop cleanly and return the last fully completed depth. Results carry an internal stop reason (`depth`, `time`, `cancelled`, or `error`) so a time-limited result is distinguishable from completing the requested depth.
 
 ### 14. Principal variation and worker communication
 
@@ -403,7 +421,7 @@ pv.push(move);
 state = applyMove(state, move);
 ```
 
-The search runs in a worker so React remains responsive:
+The TypeScript reference shows the same progress contract in its simplest form:
 
 ```ts
 self.onmessage = (event) => {
@@ -414,7 +432,7 @@ self.onmessage = (event) => {
 };
 ```
 
-The UI starts a fresh analysis whenever the position, engine toggle, time limit, or depth changes. It terminates the worker when the engine is turned off or the game ends.
+The production worker loads the WebAssembly module and forwards the same messages. The UI starts a fresh analysis whenever the position, engine toggle, time limit, or depth changes. It terminates the worker when the engine is turned off or the game ends. If WebAssembly cannot initialize after one retry, the worker reports the fallback and runs the TypeScript engine instead.
 
 ## Reading the analysis
 
@@ -430,30 +448,42 @@ The UI starts a fresh analysis whenever the position, engine toggle, time limit,
 
 ## Local development
 
-Requires Node.js 22.13.0 or newer.
+Requires Node.js 22.13.0 or newer and Emscripten 6.0.6. Install and activate the pinned SDK through [emsdk](https://github.com/emscripten-core/emsdk):
+
+```bash
+git clone https://github.com/emscripten-core/emsdk.git .emsdk
+./.emsdk/emsdk install 6.0.6
+./.emsdk/emsdk activate 6.0.6
+```
+
+On Windows, use `emsdk.bat` for the last two commands. The build helper automatically detects an SDK installed in the repository's ignored `.emsdk` directory. If Emscripten is installed elsewhere, activate its environment before running npm commands.
 
 ```bash
 npm install
 npm run dev
 ```
 
-The development server uses Vite. Open the local URL printed by Vite in a browser.
+`npm run dev` compiles the C++ engine and then starts Vite. Generated `.mjs` and `.wasm` files are placed under `public/engine/`, copied into the static build, and intentionally excluded from Git.
 
 ## Validation
 
 Run all checks before opening a pull request:
 
 ```bash
-npm run build
+npm run engine:test:full
+npm run engine:benchmark
 npm run lint
-npx tsc --noEmit
+npm run typecheck
+npm run build
 ```
 
-`npm run build` creates the static GitHub Pages output in `dist-pages`. `npm run lint` checks the TypeScript and React source. `npx tsc --noEmit` validates types without emitting files.
+`engine:test:full` compares both searches through 6 ply on curated positions and compares movement, every legal wall, candidate ordering, paths, and evaluation on 2,000 deterministic random positions. `engine:benchmark` reports TypeScript and WebAssembly NPS on fixed positions and fails if WebAssembly is slower. `npm run build` creates the GitHub Pages output in `dist-pages`.
+
+For a quicker development check, `npm run engine:test` uses 4 ply and 250 random positions. The worker backend can be selected internally with `VITE_ENGINE_BACKEND=wasm`, `typescript`, or `compare`; production defaults to `wasm`.
 
 ## Deployment
 
-Every push to `main` triggers [`.github/workflows/pages.yml`](.github/workflows/pages.yml). The workflow installs dependencies, builds the static site, uploads the `dist-pages` artifact, and deploys it to [GitHub Pages](https://souuk.github.io/walwuk/).
+Every push to `main` triggers [`.github/workflows/pages.yml`](.github/workflows/pages.yml). The workflow installs Emscripten 6.0.6 and Node.js 22, runs full native parity, lint, and TypeScript checks, builds the static site, uploads `dist-pages`, and deploys it to [GitHub Pages](https://souuk.github.io/walwuk/).
 
 ## Contributing
 
@@ -471,7 +501,8 @@ When changing engine behavior, describe the rule or evaluation change and includ
 - Wall search is selective rather than exhaustive, so not every legal wall placement is considered at every node.
 - Evaluation is handcrafted and path-based; it is not a trained NNUE engine.
 - A finite depth and time limit can cause a tactical win or loss beyond the current search horizon to be missed.
-- The transposition table is per-analysis and is discarded when a new search starts.
+- The native engine is single-threaded and avoids browser features that require cross-origin isolation.
+- The native transposition table is fixed at 32 MiB and is discarded with the worker when a new search starts.
 
 ## License
 

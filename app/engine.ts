@@ -19,6 +19,9 @@ export interface AnalysisLimits {
   timeMs: number;
 }
 
+export type AnalysisStopReason = "depth" | "time" | "cancelled" | "error";
+export type EngineBackend = "typescript" | "wasm";
+
 export interface AnalysisResult {
   bestMove: Move | null;
   score: number;
@@ -29,6 +32,8 @@ export interface AnalysisResult {
   timeMs: number;
   ttHits: number;
   selective: boolean;
+  stopReason: AnalysisStopReason;
+  backend: EngineBackend;
 }
 
 export type MoveQuality = "best" | "acceptable" | "mistake" | "cry";
@@ -59,7 +64,7 @@ export const INITIAL_STATE: GameState = {
 };
 
 const insideCoords = (r: number, c: number) => r >= 0 && r < SIZE && c >= 0 && c < SIZE;
-const moveKey = (move: Move) =>
+export const moveKey = (move: Move) =>
   move.kind === "pawn"
     ? `p${move.to.r}${move.to.c}`
     : `${move.wall.o}${move.wall.r}${move.wall.c}`;
@@ -264,7 +269,7 @@ function candidatesFromPath(path: Square[], out: Map<string, Wall>) {
 
 type PathResult = ReturnType<typeof shortestPath>;
 
-function candidateWalls(state: GameState, us?: PathResult, them?: PathResult): WallMove[] {
+export function candidateWalls(state: GameState, us?: PathResult, them?: PathResult): WallMove[] {
   if (state.wallsLeft[state.turn] <= 0) return [];
   const candidates = new Map<string, Wall>();
   const currentPath = us ?? shortestPath(state, state.turn);
@@ -290,7 +295,7 @@ function candidateWalls(state: GameState, us?: PathResult, them?: PathResult): W
     .map((wall) => ({ kind: "wall", wall }));
 }
 
-function generateMoves(state: GameState, us?: PathResult, them?: PathResult, wallMap?: WallMap): Move[] {
+export function generateMoves(state: GameState, us?: PathResult, them?: PathResult, wallMap?: WallMap): Move[] {
   return [...legalPawnMoves(state, state.turn, wallMap), ...candidateWalls(state, us, them)];
 }
 
@@ -433,6 +438,7 @@ export function analyze(
   let nodes = 0;
   let ttHits = 0;
   let lastReport = started;
+  let timedOut = false;
 
   const checkTime = () => {
     if ((nodes & 255) !== 0) return;
@@ -448,7 +454,10 @@ export function analyze(
         ttHits,
       });
     }
-    if (now >= deadline) throw new Error("timeout");
+    if (now >= deadline) {
+      timedOut = true;
+      throw new Error("timeout");
+    }
   };
 
   const orderMoves = (
@@ -549,10 +558,15 @@ export function analyze(
     timeMs: 0,
     ttHits: 0,
     selective: true,
+    stopReason: "depth",
+    backend: "typescript",
   };
 
   for (let depth = 1; depth <= limits.maxDepth; depth++) {
-    if (performance.now() >= deadline) break;
+    if (performance.now() >= deadline) {
+      timedOut = true;
+      break;
+    }
     try {
       let alpha = -INF;
       let beta = INF;
@@ -574,6 +588,8 @@ export function analyze(
         timeMs: Math.round(elapsed),
         ttHits,
         selective: true,
+        stopReason: "depth",
+        backend: "typescript",
       };
       onDepth?.(completed);
     } catch (error) {
@@ -581,5 +597,8 @@ export function analyze(
       throw error;
     }
   }
-  return completed;
+  return {
+    ...completed,
+    stopReason: timedOut || completed.depth < limits.maxDepth ? "time" : "depth",
+  };
 }

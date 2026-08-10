@@ -25,8 +25,19 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Set up Emscripten
+        uses: emscripten-core/setup-emsdk@v15
+        with:
+          version: 6.0.6
+          actions-cache-folder: .emsdk-cache
       - name: Install dependencies
         run: npm ci
+      - name: Validate native engine parity
+        run: npm run engine:test:full
+      - name: Lint source
+        run: npm run lint
+      - name: Check TypeScript
+        run: npm run typecheck
       - name: Build static site
         run: npm run build
       - name: Configure Pages
