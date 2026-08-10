@@ -10,6 +10,7 @@ const eslintConfig = defineConfig([
   globalIgnores([
     ".next/**",
     ".emsdk/**",
+    ".emsdk-cache/**",
     ".engine-test/**",
     "dist/**",
     "dist-pages/**",
