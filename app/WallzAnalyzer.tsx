@@ -17,6 +17,7 @@ type WorkerMessage = { type: "progress" | "done"; result: AnalysisResult };
 
 const cloneState = (state: GameState): GameState => JSON.parse(JSON.stringify(state));
 const sameSquare = (a: Square, b: Square) => a.r === b.r && a.c === b.c;
+const THINK_TIMES = [250, 500, 750, 1000, 1500, 2000, 3000, 5000, 7500, 10000, 15000, 30000];
 
 export default function WallzAnalyzer() {
   const [state, setState] = useState<GameState>(cloneState(INITIAL_STATE));
@@ -25,7 +26,7 @@ export default function WallzAnalyzer() {
   const [engineEnabled, setEngineEnabled] = useState(true);
   const [thinking, setThinking] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
-  const [timeMs, setTimeMs] = useState(1200);
+  const [timeMs, setTimeMs] = useState(1000);
   const [maxDepth, setMaxDepth] = useState(8);
   const [rotated, setRotated] = useState(false);
   const [notice, setNotice] = useState("");
@@ -234,7 +235,16 @@ export default function WallzAnalyzer() {
           </div>
           <div className="engine-controls">
             <label className="control-label" htmlFor="think-time">thinking time <b>{timeMs < 1000 ? `${timeMs} ms` : `${(timeMs / 1000).toFixed(1)} s`}</b></label>
-            <input id="think-time" className="range" type="range" min="250" max="30000" step="250" value={timeMs} onChange={(e) => setTimeMs(Number(e.target.value))} />
+            <input
+              id="think-time"
+              className="range"
+              type="range"
+              min="0"
+              max={THINK_TIMES.length - 1}
+              step="1"
+              value={THINK_TIMES.indexOf(timeMs)}
+              onChange={(e) => setTimeMs(THINK_TIMES[Number(e.target.value)])}
+            />
             <label className="control-label" htmlFor="max-depth">depth <b>{maxDepth} ply</b></label>
             <input id="max-depth" className="range" type="range" min="2" max="12" value={maxDepth} onChange={(e) => setMaxDepth(Number(e.target.value))} />
           </div>
