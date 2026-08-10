@@ -41,6 +41,7 @@ export function WallzAnalyzer() {
   const [notice, setNotice] = useState("");
   const [moveExplanation, setMoveExplanation] = useState<MoveExplanation | null>(null);
   const workerRef = useRef<Worker | null>(null);
+  const workerBusyRef = useRef(false);
 
   const legalPawn = useMemo(() => legalPawnMoves(state), [state]);
   const bluePath = useMemo(() => shortestPath(state, 0), [state]);
@@ -48,10 +49,10 @@ export function WallzAnalyzer() {
   const currentWinner = winner(state);
 
   useEffect(() => {
-    workerRef.current?.terminate();
-    workerRef.current = null;
-
     if (!engineEnabled || currentWinner !== null) {
+      workerRef.current?.terminate();
+      workerRef.current = null;
+      workerBusyRef.current = false;
       const timeout = window.setTimeout(() => {
         setThinking(false);
         if (!engineEnabled) setAnalysis(null);
@@ -59,38 +60,50 @@ export function WallzAnalyzer() {
       return () => window.clearTimeout(timeout);
     }
 
-    const worker = new Worker(new URL("./engine-worker.ts", import.meta.url), { type: "module" });
-    workerRef.current = worker;
+    if (workerRef.current && workerBusyRef.current) {
+      workerRef.current.terminate();
+      workerRef.current = null;
+      workerBusyRef.current = false;
+    }
+
+    let worker = workerRef.current;
+    if (!worker) {
+      const createdWorker = new Worker(new URL("./engine-worker.ts", import.meta.url), {
+        type: "module",
+      });
+      worker = createdWorker;
+      workerRef.current = createdWorker;
+      createdWorker.onmessage = (event: MessageEvent<WorkerMessage>) => {
+        if (event.data.type === "warning") {
+          setNotice(event.data.message ?? "the engine switched to its compatibility mode.");
+          return;
+        }
+        if (!event.data.result) return;
+        setAnalysis(event.data.result);
+        if (event.data.type === "done") {
+          workerBusyRef.current = false;
+          setThinking(false);
+        }
+      };
+      createdWorker.onerror = () => {
+        createdWorker.terminate();
+        if (workerRef.current === createdWorker) workerRef.current = null;
+        workerBusyRef.current = false;
+        setThinking(false);
+        setNotice("The engine paused unexpectedly. Toggle it off and on to retry.");
+      };
+    }
+
+    workerBusyRef.current = true;
     const startTimeout = window.setTimeout(() => {
       setThinking(true);
       setAnalysis(null);
     }, 0);
-    worker.onmessage = (event: MessageEvent<WorkerMessage>) => {
-      if (event.data.type === "warning") {
-        setNotice(event.data.message ?? "the engine switched to its compatibility mode.");
-        return;
-      }
-      if (!event.data.result) return;
-      setAnalysis(event.data.result);
-      if (event.data.type === "done") {
-        setThinking(false);
-        worker.terminate();
-        if (workerRef.current === worker) workerRef.current = null;
-      }
-    };
-    worker.onerror = () => {
-      setThinking(false);
-      setNotice("The engine paused unexpectedly. Toggle it off and on to retry.");
-    };
     const effectiveTimeMs = deepMode ? Infinity : timeMs;
     const effectiveMaxDepth = deepMode ? 15 : maxDepth;
     worker.postMessage({ state, limits: { timeMs: effectiveTimeMs, maxDepth: effectiveMaxDepth } });
 
-    return () => {
-      window.clearTimeout(startTimeout);
-      worker.terminate();
-      if (workerRef.current === worker) workerRef.current = null;
-    };
+    return () => window.clearTimeout(startTimeout);
   }, [state, engineEnabled, timeMs, maxDepth, deepMode, currentWinner]);
 
   useEffect(() => () => workerRef.current?.terminate(), []);
@@ -133,6 +146,8 @@ export function WallzAnalyzer() {
 
   const reset = () => {
     workerRef.current?.terminate();
+    workerRef.current = null;
+    workerBusyRef.current = false;
     setPast([]);
     setFuture([]);
     setState(cloneState(INITIAL_STATE));

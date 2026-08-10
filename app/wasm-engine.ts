@@ -75,7 +75,9 @@ function engineModuleUrl(attempt: number): URL {
   return moduleUrl;
 }
 
-async function loadModule(): Promise<WalwukModule> {
+let modulePromise: Promise<WalwukModule> | null = null;
+
+async function initializeModule(): Promise<WalwukModule> {
   let lastError: unknown;
   for (let attempt = 0; attempt < 2; ++attempt) {
     const moduleUrl = engineModuleUrl(attempt);
@@ -89,6 +91,16 @@ async function loadModule(): Promise<WalwukModule> {
     }
   }
   throw lastError instanceof Error ? lastError : new Error("Unable to load the WebAssembly engine.");
+}
+
+async function loadModule(): Promise<WalwukModule> {
+  modulePromise ??= initializeModule();
+  try {
+    return await modulePromise;
+  } catch (error) {
+    modulePromise = null;
+    throw error;
+  }
 }
 
 export async function analyzeWasm(

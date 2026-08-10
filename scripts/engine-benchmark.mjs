@@ -9,8 +9,8 @@ const benchmarkFixtures = fixtures.filter(({ name }) =>
 const results = [];
 
 for (const fixture of benchmarkFixtures) {
-  const typescript = typescriptAnalyze(fixture.state, 5);
-  const wasm = nativeAnalyze(fixture.state, 5);
+  const typescript = typescriptAnalyze(fixture.state, 15, 1_000);
+  const wasm = nativeAnalyze(fixture.state, 15, 1_000);
   results.push({
     position: fixture.name,
     typescriptNps: typescript.nps,

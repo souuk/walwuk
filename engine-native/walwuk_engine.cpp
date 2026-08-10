@@ -21,9 +21,9 @@ constexpr std::size_t kTranspositionSize = 1U << 20;
 constexpr std::array<int, 4> kRowDirections = {-1, 1, 0, 0};
 constexpr std::array<int, 4> kColumnDirections = {0, 0, -1, 1};
 
-struct Bits72 {
+struct Bits81 {
   uint64_t low = 0;
-  uint16_t high = 0;
+  uint32_t high = 0;
 
   bool Test(int index) const {
     return index < 64 ? ((low >> index) & 1U) != 0
@@ -34,10 +34,74 @@ struct Bits72 {
     if (index < 64) {
       low |= uint64_t{1} << index;
     } else {
-      high |= uint16_t{1} << (index - 64);
+      high |= uint32_t{1} << (index - 64);
+    }
+  }
+
+  void Clear(int index) {
+    if (index < 64) {
+      low &= ~(uint64_t{1} << index);
+    } else {
+      high &= ~(uint32_t{1} << (index - 64));
     }
   }
 };
+
+Bits81 operator|(Bits81 left, Bits81 right) {
+  return {left.low | right.low, left.high | right.high};
+}
+
+Bits81 operator&(Bits81 left, Bits81 right) {
+  return {left.low & right.low, left.high & right.high};
+}
+
+Bits81 Without(Bits81 value, Bits81 removed) {
+  return {value.low & ~removed.low, value.high & ~removed.high};
+}
+
+bool Any(Bits81 value) { return value.low != 0 || value.high != 0; }
+
+Bits81 SquareBit(int square) {
+  Bits81 result;
+  result.Set(square);
+  return result;
+}
+
+Bits81 ShiftLeft(Bits81 value, int shift) {
+  Bits81 result;
+  if (shift == 0) return value;
+  result.low = value.low << shift;
+  result.high = static_cast<uint32_t>((value.high << shift) |
+                                      (value.low >> (64 - shift)));
+  result.high &= 0x1ffffU;
+  return result;
+}
+
+Bits81 ShiftRight(Bits81 value, int shift) {
+  Bits81 result;
+  if (shift == 0) return value;
+  result.low = (value.low >> shift) |
+               (static_cast<uint64_t>(value.high) << (64 - shift));
+  result.high = value.high >> shift;
+  return result;
+}
+
+Bits81 MakeRowMask(int row) {
+  Bits81 result;
+  for (int column = 0; column < 9; ++column) result.Set(row * 9 + column);
+  return result;
+}
+
+Bits81 MakeColumnMask(int column) {
+  Bits81 result;
+  for (int row = 0; row < 9; ++row) result.Set(row * 9 + column);
+  return result;
+}
+
+const Bits81 kTopRow = MakeRowMask(0);
+const Bits81 kBottomRow = MakeRowMask(8);
+const Bits81 kLeftColumn = MakeColumnMask(0);
+const Bits81 kRightColumn = MakeColumnMask(8);
 
 struct Position {
   std::array<uint8_t, 2> pawns{};
@@ -45,14 +109,16 @@ struct Position {
   uint8_t turn = 0;
   uint64_t horizontal_walls = 0;
   uint64_t vertical_walls = 0;
-  Bits72 blocked_horizontal;
-  Bits72 blocked_vertical;
+  Bits81 blocked_up;
+  Bits81 blocked_down;
+  Bits81 blocked_left;
+  Bits81 blocked_right;
 };
 
 struct PathResult {
   int distance = 99;
-  int length = 0;
-  std::array<uint8_t, kSquareCount> squares{};
+  uint64_t blocking_horizontal = 0;
+  uint64_t blocking_vertical = 0;
 };
 
 struct MoveList {
@@ -60,6 +126,20 @@ struct MoveList {
   std::array<uint16_t, 136> moves{};
 
   void Push(uint16_t move) { moves[count++] = move; }
+};
+
+struct SearchMove {
+  uint16_t move = kNoMove;
+  std::array<PathResult, 2> child_paths{};
+};
+
+struct SearchMoveList {
+  int count = 0;
+  std::array<SearchMove, 136> moves{};
+
+  void Push(uint16_t move, const std::array<PathResult, 2>& child_paths) {
+    moves[count++] = {move, child_paths};
+  }
 };
 
 enum class Bound : uint8_t { kExact, kLower, kUpper };
@@ -146,10 +226,22 @@ std::size_t PositionIndex(const Position& position) {
 
 bool SamePosition(const TranspositionEntry& entry,
                   const Position& position) {
-  return entry.generation == transposition_generation &&
+  return entry.generation != 0 &&
          entry.horizontal_walls == position.horizontal_walls &&
          entry.vertical_walls == position.vertical_walls &&
          entry.metadata == PositionMetadata(position);
+}
+
+int ScoreToTable(int score, int ply) {
+  if (score > kWin - 100) return score + ply;
+  if (score < -kWin + 100) return score - ply;
+  return score;
+}
+
+int ScoreFromTable(int score, int ply) {
+  if (score > kWin - 100) return score - ply;
+  if (score < -kWin + 100) return score + ply;
+  return score;
 }
 
 void AddWallUnchecked(Position* position, int row, int column,
@@ -157,12 +249,40 @@ void AddWallUnchecked(Position* position, int row, int column,
   const int wall_id = row * 8 + column;
   if (vertical) {
     position->vertical_walls |= uint64_t{1} << wall_id;
-    position->blocked_vertical.Set(row * 8 + column);
-    position->blocked_vertical.Set((row + 1) * 8 + column);
+    for (int blocked_row = row; blocked_row <= row + 1; ++blocked_row) {
+      const int left = blocked_row * 9 + column;
+      position->blocked_right.Set(left);
+      position->blocked_left.Set(left + 1);
+    }
   } else {
     position->horizontal_walls |= uint64_t{1} << wall_id;
-    position->blocked_horizontal.Set(row * 9 + column);
-    position->blocked_horizontal.Set(row * 9 + column + 1);
+    for (int blocked_column = column; blocked_column <= column + 1;
+         ++blocked_column) {
+      const int upper = row * 9 + blocked_column;
+      position->blocked_down.Set(upper);
+      position->blocked_up.Set(upper + 9);
+    }
+  }
+}
+
+void RemoveWallUnchecked(Position* position, int row, int column,
+                         bool vertical) {
+  const int wall_id = row * 8 + column;
+  if (vertical) {
+    position->vertical_walls &= ~(uint64_t{1} << wall_id);
+    for (int blocked_row = row; blocked_row <= row + 1; ++blocked_row) {
+      const int left = blocked_row * 9 + column;
+      position->blocked_right.Clear(left);
+      position->blocked_left.Clear(left + 1);
+    }
+  } else {
+    position->horizontal_walls &= ~(uint64_t{1} << wall_id);
+    for (int blocked_column = column; blocked_column <= column + 1;
+         ++blocked_column) {
+      const int upper = row * 9 + blocked_column;
+      position->blocked_down.Clear(upper);
+      position->blocked_up.Clear(upper + 9);
+    }
   }
 }
 
@@ -192,58 +312,76 @@ Position BuildPosition(int pawn_zero, int pawn_one, int walls_zero,
 }
 
 bool Blocked(const Position& position, int from, int to) {
-  const int from_row = from / 9;
-  const int from_column = from % 9;
-  const int to_row = to / 9;
-  const int to_column = to % 9;
-  if (from_row != to_row) {
-    const int row = from_row < to_row ? from_row : to_row;
-    return position.blocked_horizontal.Test(row * 9 + from_column);
+  if (to == from - 9) return position.blocked_up.Test(from);
+  if (to == from + 9) return position.blocked_down.Test(from);
+  if (to == from - 1) return position.blocked_left.Test(from);
+  return position.blocked_right.Test(from);
+}
+
+Bits81 Expand(const Position& position, Bits81 frontier) {
+  const Bits81 up_sources = Without(Without(frontier, kTopRow), position.blocked_up);
+  const Bits81 down_sources =
+      Without(Without(frontier, kBottomRow), position.blocked_down);
+  const Bits81 left_sources =
+      Without(Without(frontier, kLeftColumn), position.blocked_left);
+  const Bits81 right_sources =
+      Without(Without(frontier, kRightColumn), position.blocked_right);
+  return ShiftRight(up_sources, 9) | ShiftLeft(down_sources, 9) |
+         ShiftRight(left_sources, 1) | ShiftLeft(right_sources, 1);
+}
+
+int FirstSquare(Bits81 bits) {
+  if (bits.low != 0) return __builtin_ctzll(bits.low);
+  return 64 + __builtin_ctz(bits.high);
+}
+
+void AddBlockingWallCandidates(int first, int second, PathResult* result) {
+  const int first_row = first / 9;
+  const int first_column = first % 9;
+  const int second_row = second / 9;
+  const int second_column = second % 9;
+  if (first_row != second_row) {
+    const int row = first_row < second_row ? first_row : second_row;
+    for (const int column : {first_column - 1, first_column}) {
+      if (column >= 0 && column < 8) {
+        result->blocking_horizontal |= uint64_t{1} << (row * 8 + column);
+      }
+    }
+  } else {
+    const int column =
+        first_column < second_column ? first_column : second_column;
+    for (const int row : {first_row - 1, first_row}) {
+      if (row >= 0 && row < 8) {
+        result->blocking_vertical |= uint64_t{1} << (row * 8 + column);
+      }
+    }
   }
-  const int column = from_column < to_column ? from_column : to_column;
-  return position.blocked_vertical.Test(from_row * 8 + column);
 }
 
 PathResult ShortestPath(const Position& position, int player) {
-  const int start = position.pawns[player];
-  const int target_row = player == 0 ? 0 : 8;
-  std::array<uint8_t, kSquareCount> queue{};
-  std::array<uint8_t, kSquareCount> seen{};
-  std::array<int8_t, kSquareCount> parent{};
-  parent.fill(-1);
-  queue[0] = static_cast<uint8_t>(start);
-  seen[start] = 1;
-  int head = 0;
-  int tail = 1;
-  while (head < tail) {
-    const int current = queue[head++];
-    const int row = current / 9;
-    const int column = current % 9;
-    if (row == target_row) {
+  const Bits81 target = player == 0 ? kTopRow : kBottomRow;
+  std::array<Bits81, kSquareCount> layers{};
+  Bits81 frontier = SquareBit(position.pawns[player]);
+  Bits81 visited = frontier;
+  for (int distance = 0; distance < kSquareCount; ++distance) {
+    layers[distance] = frontier;
+    const Bits81 reached = frontier & target;
+    if (Any(reached)) {
       PathResult result;
-      std::array<uint8_t, kSquareCount> reverse_path{};
-      int cursor = current;
-      while (cursor != -1) {
-        reverse_path[result.length++] = static_cast<uint8_t>(cursor);
-        if (cursor == start) break;
-        cursor = parent[cursor];
-      }
-      result.distance = result.length - 1;
-      for (int i = 0; i < result.length; ++i) {
-        result.squares[i] = reverse_path[result.length - i - 1];
+      result.distance = distance;
+      int current = FirstSquare(reached);
+      for (int layer = distance; layer > 0; --layer) {
+        const Bits81 predecessors = Expand(position, SquareBit(current)) &
+                                    layers[layer - 1];
+        const int predecessor = FirstSquare(predecessors);
+        AddBlockingWallCandidates(predecessor, current, &result);
+        current = predecessor;
       }
       return result;
     }
-    for (int direction = 0; direction < 4; ++direction) {
-      const int next_row = row + kRowDirections[direction];
-      const int next_column = column + kColumnDirections[direction];
-      if (!Inside(next_row, next_column)) continue;
-      const int next = next_row * 9 + next_column;
-      if (seen[next] || Blocked(position, current, next)) continue;
-      seen[next] = 1;
-      parent[next] = static_cast<int8_t>(current);
-      queue[tail++] = static_cast<uint8_t>(next);
-    }
+    frontier = Without(Expand(position, frontier), visited);
+    if (!Any(frontier)) break;
+    visited = visited | frontier;
   }
   return {};
 }
@@ -306,8 +444,8 @@ MoveList LegalPawnMoves(const Position& position, int player) {
   return result;
 }
 
-bool IsLegalWall(const Position& position, int row, int column,
-                 bool vertical) {
+bool IsStructurallyLegalWall(const Position& position, int row, int column,
+                             bool vertical) {
   if (row < 0 || row > 7 || column < 0 || column > 7 ||
       position.walls_left[position.turn] == 0) {
     return false;
@@ -322,85 +460,87 @@ bool IsLegalWall(const Position& position, int row, int column,
     return false;
   }
   if (vertical) {
-    if (row > 0 && ((own_walls >> (id - 8)) & 1U) != 0) return false;
-    if (row < 7 && ((own_walls >> (id + 8)) & 1U) != 0) return false;
-  } else {
-    if (column > 0 && ((own_walls >> (id - 1)) & 1U) != 0) return false;
-    if (column < 7 && ((own_walls >> (id + 1)) & 1U) != 0) return false;
+    return (row == 0 || ((own_walls >> (id - 8)) & 1U) == 0) &&
+           (row == 7 || ((own_walls >> (id + 8)) & 1U) == 0);
   }
+  return (column == 0 || ((own_walls >> (id - 1)) & 1U) == 0) &&
+         (column == 7 || ((own_walls >> (id + 1)) & 1U) == 0);
+}
 
+bool IsLegalWall(const Position& position, int row, int column,
+                 bool vertical) {
+  if (!IsStructurallyLegalWall(position, row, column, vertical)) return false;
   Position trial = position;
   AddWallUnchecked(&trial, row, column, vertical);
   return ShortestPath(trial, 0).distance < 99 &&
          ShortestPath(trial, 1).distance < 99;
 }
 
-void AddPathCandidates(const PathResult& path, int edge_limit,
-                       std::array<uint8_t, 128>* seen, MoveList* candidates) {
-  const int edges = path.length - 1 < edge_limit ? path.length - 1 : edge_limit;
-  for (int index = 0; index < edges; ++index) {
-    const int first = path.squares[index];
-    const int second = path.squares[index + 1];
-    const int first_row = first / 9;
-    const int first_column = first % 9;
-    const int second_row = second / 9;
-    const int second_column = second % 9;
-    if (first_row != second_row) {
-      const int row = first_row < second_row ? first_row : second_row;
-      for (const int column : {first_column - 1, first_column}) {
-        if (column < 0 || column > 7) continue;
-        const int candidate = row * 8 + column;
-        if ((*seen)[candidate]) continue;
-        (*seen)[candidate] = 1;
-        candidates->Push(PackWallMove(row, column, false));
-      }
-    } else {
-      const int column =
-          first_column < second_column ? first_column : second_column;
-      for (const int row : {first_row - 1, first_row}) {
-        if (row < 0 || row > 7) continue;
-        const int candidate = 64 + row * 8 + column;
-        if ((*seen)[candidate]) continue;
-        (*seen)[candidate] = 1;
-        candidates->Push(PackWallMove(row, column, true));
-      }
-    }
-  }
+bool WallTouchesWitness(const PathResult& path, int id, bool vertical) {
+  const uint64_t candidates =
+      vertical ? path.blocking_vertical : path.blocking_horizontal;
+  return ((candidates >> id) & 1U) != 0;
 }
 
-MoveList CandidateWalls(const Position& position, const PathResult& current,
-                        const PathResult& opposing) {
-  MoveList candidates;
-  MoveList result;
-  if (position.walls_left[position.turn] == 0) return result;
-  std::array<uint8_t, 128> seen{};
-  AddPathCandidates(opposing, kSquareCount, &seen, &candidates);
-  AddPathCandidates(current, 4, &seen, &candidates);
+SearchMoveList GenerateSearchMoves(
+    Position* position, const std::array<PathResult, 2>& paths) {
+  SearchMoveList result;
+  const int player = position->turn;
+  const MoveList pawn_moves = LegalPawnMoves(*position, player);
+  const uint8_t original_pawn = position->pawns[player];
+  for (int index = 0; index < pawn_moves.count; ++index) {
+    const uint16_t move = pawn_moves.moves[index];
+    position->pawns[player] = static_cast<uint8_t>(MoveSquare(move));
+    std::array<PathResult, 2> child_paths = paths;
+    child_paths[player] = ShortestPath(*position, player);
+    result.Push(move, child_paths);
+  }
+  position->pawns[player] = original_pawn;
 
-  for (const int pawn : position.pawns) {
-    const int pawn_row = pawn / 9;
-    const int pawn_column = pawn % 9;
-    for (int row_offset = -1; row_offset <= 0; ++row_offset) {
-      for (int column_offset = -1; column_offset <= 0; ++column_offset) {
-        const int row = pawn_row + row_offset;
-        const int column = pawn_column + column_offset;
-        if (row < 0 || row > 7 || column < 0 || column > 7) continue;
-        for (int orientation = 0; orientation < 2; ++orientation) {
-          const int candidate = orientation * 64 + row * 8 + column;
-          if (seen[candidate]) continue;
-          seen[candidate] = 1;
-          candidates.Push(PackWallMove(row, column, orientation == 1));
+  if (position->walls_left[player] == 0) return result;
+  for (int orientation = 0; orientation < 2; ++orientation) {
+    const bool vertical = orientation == 1;
+    for (int row = 0; row < 8; ++row) {
+      for (int column = 0; column < 8; ++column) {
+        if (!IsStructurallyLegalWall(*position, row, column, vertical)) {
+          continue;
+        }
+        const int id = row * 8 + column;
+        AddWallUnchecked(position, row, column, vertical);
+        std::array<PathResult, 2> child_paths = paths;
+        bool legal = true;
+        for (int path_player = 0; path_player < 2; ++path_player) {
+          if (WallTouchesWitness(paths[path_player], id, vertical)) {
+            child_paths[path_player] = ShortestPath(*position, path_player);
+            if (child_paths[path_player].distance >= 99) {
+              legal = false;
+              break;
+            }
+          }
+        }
+        RemoveWallUnchecked(position, row, column, vertical);
+        if (legal) {
+          result.Push(PackWallMove(row, column, vertical), child_paths);
         }
       }
     }
   }
+  return result;
+}
 
-  for (int index = 0; index < candidates.count; ++index) {
-    const uint16_t move = candidates.moves[index];
-    const int wall_id = WallId(move);
-    if (IsLegalWall(position, wall_id / 8, wall_id % 8,
-                    IsVerticalWall(move))) {
-      result.Push(move);
+MoveList CandidateWalls(const Position& position, const PathResult& current,
+                        const PathResult& opposing) {
+  static_cast<void>(current);
+  static_cast<void>(opposing);
+  MoveList result;
+  if (position.walls_left[position.turn] == 0) return result;
+  for (int orientation = 0; orientation < 2; ++orientation) {
+    for (int row = 0; row < 8; ++row) {
+      for (int column = 0; column < 8; ++column) {
+        if (IsLegalWall(position, row, column, orientation == 1)) {
+          result.Push(PackWallMove(row, column, orientation == 1));
+        }
+      }
     }
   }
   return result;
@@ -429,6 +569,30 @@ Position ApplyMove(const Position& position, uint16_t move) {
   return next;
 }
 
+void MakeMove(Position* position, uint16_t move) {
+  const int player = position->turn;
+  if (IsWallMove(move)) {
+    const int id = WallId(move);
+    AddWallUnchecked(position, id / 8, id % 8, IsVerticalWall(move));
+    --position->walls_left[player];
+  } else {
+    position->pawns[player] = static_cast<uint8_t>(MoveSquare(move));
+  }
+  position->turn = static_cast<uint8_t>(1 - player);
+}
+
+void UnmakeMove(Position* position, uint16_t move, uint8_t original_pawn) {
+  position->turn = static_cast<uint8_t>(1 - position->turn);
+  const int player = position->turn;
+  if (IsWallMove(move)) {
+    const int id = WallId(move);
+    RemoveWallUnchecked(position, id / 8, id % 8, IsVerticalWall(move));
+    ++position->walls_left[player];
+  } else {
+    position->pawns[player] = original_pawn;
+  }
+}
+
 int Winner(const Position& position) {
   if (position.pawns[0] / 9 == 0) return 0;
   if (position.pawns[1] / 9 == 8) return 1;
@@ -441,6 +605,21 @@ int StaticEvaluation(const Position& position) {
   const int periwinkle = ShortestPath(position, 0).distance;
   const int blossom = ShortestPath(position, 1).distance;
   const int path_score = (blossom - periwinkle) * 100;
+  const int wall_score =
+      (position.walls_left[0] - position.walls_left[1]) * 13;
+  const int mobility =
+      (LegalPawnMoves(position, 0).count -
+       LegalPawnMoves(position, 1).count) *
+      4;
+  const int absolute = path_score + wall_score + mobility;
+  return position.turn == 0 ? absolute : -absolute;
+}
+
+int StaticEvaluation(const Position& position,
+                     const std::array<PathResult, 2>& paths) {
+  const int winner = Winner(position);
+  if (winner != -1) return winner == position.turn ? kWin : -kWin;
+  const int path_score = (paths[1].distance - paths[0].distance) * 100;
   const int wall_score =
       (position.walls_left[0] - position.walls_left[1]) * 13;
   const int mobility =
@@ -491,7 +670,7 @@ std::string ResultJson(const AnalysisResult& result) {
   output << "],\"nodes\":" << result.nodes << ",\"nps\":" << result.nps
          << ",\"timeMs\":" << result.time_ms << ",\"ttHits\":"
          << result.transposition_hits
-         << ",\"selective\":true,\"stopReason\":\""
+         << ",\"selective\":false,\"stopReason\":\""
          << result.stop_reason << "\",\"backend\":\"wasm\"}";
   return output.str();
 }
@@ -511,7 +690,9 @@ class Search {
   }
 
   AnalysisResult Run() {
-    completed_.score = StaticEvaluation(initial_);
+    const std::array<PathResult, 2> root_paths = {
+        ShortestPath(initial_, 0), ShortestPath(initial_, 1)};
+    completed_.score = StaticEvaluation(initial_, root_paths);
     for (int depth = 1; depth <= max_depth_; ++depth) {
       if (DeadlineReached()) {
         timed_out_ = true;
@@ -523,10 +704,10 @@ class Search {
         alpha = completed_.score - 175;
         beta = completed_.score + 175;
       }
-      int score = Negamax(initial_, depth, alpha, beta, 0);
+      int score = Negamax(&initial_, root_paths, depth, alpha, beta, 0);
       if (timed_out_) break;
       if (score <= alpha || score >= beta) {
-        score = Negamax(initial_, depth, -kInfinity, kInfinity, 0);
+        score = Negamax(&initial_, root_paths, depth, -kInfinity, kInfinity, 0);
         if (timed_out_) break;
       }
 
@@ -581,15 +762,13 @@ class Search {
   }
 
   TranspositionEntry* FindEntry(const Position& position) {
-    TranspositionEntry& entry =
-        transposition_table[PositionIndex(position)];
+    TranspositionEntry& entry = transposition_table[PositionIndex(position)];
     return SamePosition(entry, position) ? &entry : nullptr;
   }
 
   void StoreEntry(const Position& position, int depth, int score, Bound bound,
-                  uint16_t best_move) {
-    TranspositionEntry& entry =
-        transposition_table[PositionIndex(position)];
+                  uint16_t best_move, int ply) {
+    TranspositionEntry& entry = transposition_table[PositionIndex(position)];
     if (entry.generation == transposition_generation &&
         !SamePosition(entry, position) && entry.depth > depth) {
       return;
@@ -597,43 +776,48 @@ class Search {
     entry.horizontal_walls = position.horizontal_walls;
     entry.vertical_walls = position.vertical_walls;
     entry.metadata = PositionMetadata(position);
-    entry.score = score;
+    entry.score = ScoreToTable(score, ply);
     entry.best_move = best_move;
     entry.depth = static_cast<uint8_t>(depth);
     entry.bound = bound;
     entry.generation = transposition_generation;
   }
 
-  void OrderMoves(const Position& position, MoveList* moves,
-                  uint16_t transposition_move, int before_current,
-                  int before_opposing) {
+  void OrderMoves(const Position& position, SearchMoveList* moves,
+                  uint16_t transposition_move,
+                  const std::array<PathResult, 2>& paths) {
     std::array<int, 136> priorities{};
     for (int index = 0; index < moves->count; ++index) {
-      const uint16_t move = moves->moves[index];
+      const uint16_t move = moves->moves[index].move;
       int priority = move == transposition_move ? 1'000'000 : 0;
-      const Position next = ApplyMove(position, move);
-      if (Winner(next) == position.turn) priority += 500'000;
       if (!IsWallMove(move)) {
+        const int destination = MoveSquare(move);
+        const int destination_row = destination / 9;
+        if ((position.turn == 0 && destination_row == 0) ||
+            (position.turn == 1 && destination_row == 8)) {
+          priority += 500'000;
+        }
         const int goal = position.turn == 0 ? 0 : 8;
         const int before_row = position.pawns[position.turn] / 9;
-        const int after_row = MoveSquare(move) / 9;
+        const int after_row = destination_row;
         const int before_distance = before_row > goal ? before_row - goal
                                                       : goal - before_row;
         const int after_distance = after_row > goal ? after_row - goal
                                                     : goal - after_row;
         priority += (before_distance - after_distance) * 90;
       } else {
-        const int after_current = ShortestPath(next, position.turn).distance;
-        const int after_opposing =
-            ShortestPath(next, 1 - position.turn).distance;
-        priority += (after_opposing - before_opposing) * 120 -
-                    (after_current - before_current) * 90;
+        const int player = position.turn;
+        const auto& child_paths = moves->moves[index].child_paths;
+        priority +=
+            (child_paths[1 - player].distance - paths[1 - player].distance) *
+                120 -
+            (child_paths[player].distance - paths[player].distance) * 90;
       }
       priorities[index] = priority;
     }
 
     for (int index = 1; index < moves->count; ++index) {
-      const uint16_t move = moves->moves[index];
+      const SearchMove move = moves->moves[index];
       const int priority = priorities[index];
       int cursor = index;
       while (cursor > 0 && priorities[cursor - 1] < priority) {
@@ -646,47 +830,60 @@ class Search {
     }
   }
 
-  int Negamax(const Position& position, int depth, int alpha, int beta,
-              int ply) {
+  int Negamax(Position* position, const std::array<PathResult, 2>& paths,
+              int depth, int alpha, int beta, int ply) {
     ++nodes_;
     CheckTime();
     if (timed_out_) return 0;
-    const int winner = Winner(position);
+    const int winner = Winner(*position);
     if (winner != -1) {
-      return winner == position.turn ? kWin - ply : -kWin + ply;
+      return winner == position->turn ? kWin - ply : -kWin + ply;
     }
-    if (depth <= 0) return StaticEvaluation(position);
+    if (depth <= 0) return StaticEvaluation(*position, paths);
 
-    TranspositionEntry* cached = FindEntry(position);
+    TranspositionEntry* cached = FindEntry(*position);
     const int original_alpha = alpha;
-    if (cached != nullptr && cached->depth >= depth) {
+    if (cached != nullptr && cached->depth == depth) {
       ++transposition_hits_;
-      if (cached->bound == Bound::kExact) return cached->score;
+      const int cached_score = ScoreFromTable(cached->score, ply);
+      if (cached->bound == Bound::kExact) return cached_score;
       if (cached->bound == Bound::kLower) {
-        if (cached->score > alpha) alpha = cached->score;
-      } else if (cached->score < beta) {
-        beta = cached->score;
+        if (cached_score > alpha) alpha = cached_score;
+      } else if (cached_score < beta) {
+        beta = cached_score;
       }
-      if (alpha >= beta) return cached->score;
+      if (alpha >= beta) return cached_score;
     }
 
-    const PathResult current = ShortestPath(position, position.turn);
-    const PathResult opposing = ShortestPath(position, 1 - position.turn);
-    MoveList moves = GenerateMoves(position, current, opposing);
-    OrderMoves(position, &moves,
+    SearchMoveList moves = GenerateSearchMoves(position, paths);
+    OrderMoves(*position, &moves,
                cached == nullptr ? kNoMove : cached->best_move,
-               current.distance, opposing.distance);
-    if (moves.count == 0) return StaticEvaluation(position);
+               paths);
+    if (moves.count == 0) return StaticEvaluation(*position, paths);
 
     int best_score = -kInfinity;
     uint16_t best_move = kNoMove;
     for (int index = 0; index < moves.count; ++index) {
-      const int score = -Negamax(ApplyMove(position, moves.moves[index]),
-                                 depth - 1, -beta, -alpha, ply + 1);
+      const uint16_t move = moves.moves[index].move;
+      const uint8_t original_pawn = position->pawns[position->turn];
+      MakeMove(position, move);
+      int score;
+      if (index == 0) {
+        score = -Negamax(position, moves.moves[index].child_paths, depth - 1,
+                         -beta, -alpha, ply + 1);
+      } else {
+        score = -Negamax(position, moves.moves[index].child_paths, depth - 1,
+                         -alpha - 1, -alpha, ply + 1);
+        if (!timed_out_ && score > alpha && score < beta) {
+          score = -Negamax(position, moves.moves[index].child_paths,
+                           depth - 1, -beta, -alpha, ply + 1);
+        }
+      }
+      UnmakeMove(position, move, original_pawn);
       if (timed_out_) return 0;
       if (score > best_score) {
         best_score = score;
-        best_move = moves.moves[index];
+        best_move = move;
       }
       if (score > alpha) alpha = score;
       if (alpha >= beta) break;
@@ -698,7 +895,7 @@ class Search {
     } else if (best_score >= beta) {
       bound = Bound::kLower;
     }
-    StoreEntry(position, depth, best_score, bound, best_move);
+    StoreEntry(*position, depth, best_score, bound, best_move, ply);
     return best_score;
   }
 
@@ -708,8 +905,9 @@ class Search {
     for (int index = 0; index < depth && index < 15; ++index) {
       const TranspositionEntry* entry = FindEntry(position);
       if (entry == nullptr || entry->best_move == kNoMove) break;
-      completed_.pv[completed_.pv_length++] = entry->best_move;
-      position = ApplyMove(position, entry->best_move);
+      const uint16_t move = entry->best_move;
+      completed_.pv[completed_.pv_length++] = move;
+      position = ApplyMove(position, move);
       if (Winner(position) != -1) break;
     }
   }

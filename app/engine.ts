@@ -247,56 +247,26 @@ export function winner(state: GameState): Player | null {
   return null;
 }
 
-function candidatesFromPath(path: Square[], out: Map<string, Wall>) {
-  for (let i = 0; i + 1 < path.length; i++) {
-    const a = path[i];
-    const b = path[i + 1];
-    if (a.r !== b.r) {
-      const r = Math.min(a.r, b.r);
-      for (const c of [a.c - 1, a.c]) {
-        const wall: Wall = { r, c, o: "h" };
-        if (c >= 0 && c <= 7) out.set(moveKey({ kind: "wall", wall }), wall);
-      }
-    } else {
-      const c = Math.min(a.c, b.c);
-      for (const r of [a.r - 1, a.r]) {
-        const wall: Wall = { r, c, o: "v" };
-        if (r >= 0 && r <= 7) out.set(moveKey({ kind: "wall", wall }), wall);
-      }
-    }
-  }
-}
-
 type PathResult = ReturnType<typeof shortestPath>;
 
-export function candidateWalls(state: GameState, us?: PathResult, them?: PathResult): WallMove[] {
+export function legalWallMoves(state: GameState): WallMove[] {
   if (state.wallsLeft[state.turn] <= 0) return [];
-  const candidates = new Map<string, Wall>();
-  const currentPath = us ?? shortestPath(state, state.turn);
-  const opposingPath = them ?? shortestPath(state, (1 - state.turn) as Player);
-  candidatesFromPath(opposingPath.path, candidates);
-  candidatesFromPath(currentPath.path.slice(0, 5), candidates);
-
-  // Include nearby tactical walls so jumps and local funnels are not missed.
-  for (const pawn of state.pawns) {
-    for (let dr = -1; dr <= 0; dr++) {
-      for (let dc = -1; dc <= 0; dc++) {
-        for (const o of ["h", "v"] as const) {
-          const wall: Wall = { r: pawn.r + dr, c: pawn.c + dc, o };
-          if (wall.r >= 0 && wall.r <= 7 && wall.c >= 0 && wall.c <= 7) {
-            candidates.set(moveKey({ kind: "wall", wall }), wall);
-          }
-        }
+  const moves: WallMove[] = [];
+  for (const o of ["h", "v"] as const) {
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const wall: Wall = { r, c, o };
+        if (isLegalWall(state, wall)) moves.push({ kind: "wall", wall });
       }
     }
   }
-  return [...candidates.values()]
-    .filter((wall) => isLegalWall(state, wall))
-    .map((wall) => ({ kind: "wall", wall }));
+  return moves;
 }
 
 export function generateMoves(state: GameState, us?: PathResult, them?: PathResult, wallMap?: WallMap): Move[] {
-  return [...legalPawnMoves(state, state.turn, wallMap), ...candidateWalls(state, us, them)];
+  void us;
+  void them;
+  return [...legalPawnMoves(state, state.turn, wallMap), ...legalWallMoves(state)];
 }
 
 function evaluateAbsolute(state: GameState, wallMap = createWallMap(state.walls)): number {
@@ -557,7 +527,7 @@ export function analyze(
     nps: 0,
     timeMs: 0,
     ttHits: 0,
-    selective: true,
+    selective: false,
     stopReason: "depth",
     backend: "typescript",
   };
@@ -587,7 +557,7 @@ export function analyze(
         nps: Math.round((nodes * 1000) / elapsed),
         timeMs: Math.round(elapsed),
         ttHits,
-        selective: true,
+        selective: false,
         stopReason: "depth",
         backend: "typescript",
       };

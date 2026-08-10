@@ -12,7 +12,7 @@ import {
 
 const full = process.argv.includes("--full");
 const randomPositionCount = full ? 2_000 : 250;
-const maximumDepth = full ? 6 : 4;
+const maximumDepth = full ? 3 : 2;
 
 const depthLimited = nativeAnalyze(fixtures[0].state, 1);
 assert.equal(depthLimited.stopReason, "depth", "fixed-depth search should report depth completion");

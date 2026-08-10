@@ -112,7 +112,7 @@ At a high level, every analysis follows this pipeline:
 ```text
 current position
     ↓
-generate legal pawn moves and selective wall candidates
+generate every legal pawn and wall move
     ↓
 order promising moves first
     ↓
@@ -215,26 +215,24 @@ The same pathfinder is used in three places:
 2. to evaluate a position;
 3. to reject walls that close every route.
 
-### 5. Generating wall candidates selectively
+### 5. Generating walls exhaustively
 
-The theoretical number of wall placements is large, especially as the board fills. Searching every legal wall at every node would make a browser search slow. walwuk therefore creates a tactical candidate set around strategically relevant areas:
-
-```ts
-const us = shortestPath(state, state.turn);
-const them = shortestPath(state, (1 - state.turn) as Player);
-candidatesFromPath(them.path, candidates);
-candidatesFromPath(us.path.slice(0, 5), candidates);
-```
-
-It also includes nearby horizontal and vertical walls around both pawns. Candidates are deduplicated, checked with `isLegalWall`, and converted to `WallMove` objects:
+At every searched position, walwuk considers every location on the 8×8 wall grid in both orientations. Each placement must pass overlap, crossing, wall-reserve, and route-existence checks before it enters the move list:
 
 ```ts
-return [...candidates.values()]
-  .filter((wall) => isLegalWall(state, wall))
-  .map((wall) => ({ kind: "wall", wall }));
+for (const o of ["h", "v"] as const) {
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const wall = { r, c, o };
+      if (isLegalWall(state, wall)) moves.push({ kind: "wall", wall });
+    }
+  }
+}
 ```
 
-This is one of the main differences from a fully exhaustive solver: wall search is deliberately selective.
+The production engine makes this exhaustive pass practical with an exact witness-path shortcut. Each shortest-path result records which wall placements could touch one known shortest route. If a proposed wall cannot touch that route, its distance is provably unchanged: adding an edge blocker cannot create a shorter route, and the old shortest route still exists. If the wall can touch the witness, the engine recomputes the path. No legal wall is omitted by this optimization.
+
+The native pathfinder expands the 81 squares as compact bit sets, moves are applied and undone in place, and child path results are carried into recursion. These are representation and reuse optimizations; they do not weaken wall legality or search coverage.
 
 ### 6. Evaluating a position
 
@@ -321,6 +319,17 @@ When `alpha` reaches or exceeds `beta`, the remaining moves at that node cannot 
 
 This does not mean the engine has proven every skipped move is objectively losing. It means those moves cannot improve the decision relative to a line already found within the current search window.
 
+The native engine also uses principal variation search. It searches the first, most promising move with the full alpha-beta window, then tests later moves with a one-point window. Any later move that might improve the result is immediately searched again with the full window:
+
+```cpp
+score = -Negamax(position, child_paths, depth - 1, -alpha - 1, -alpha, ply + 1);
+if (score > alpha && score < beta) {
+  score = -Negamax(position, child_paths, depth - 1, -beta, -alpha, ply + 1);
+}
+```
+
+The narrow probe is an exact alpha-beta optimization, not selective pruning: a potentially better move always receives the full search needed to establish its score.
+
 ### 10. Caching repeated positions
 
 Different move orders can lead to the same position. The C++ engine stores analyzed positions in a fixed-size, contiguous transposition table. Each entry contains both wall masks, packed pawn/reserve/turn metadata, the searched depth, score bound, and best move.
@@ -342,7 +351,7 @@ return `${state.turn}|${state.pawns[0].r}${state.pawns[0].c}|` +
 The native table hashes that identity to a slot but verifies the complete packed identity before using an entry. A collision can therefore replace or miss a cached result, but cannot return another position's score. A result is reused only when it was searched deeply enough:
 
 ```ts
-if (cached && cached.depth >= depth) {
+    if (cached && cached.depth === depth) {
   ttHits++;
   // use the cached exact or bounded result
 }
@@ -432,7 +441,7 @@ self.onmessage = (event) => {
 };
 ```
 
-The production worker loads the WebAssembly module and forwards the same messages. The UI starts a fresh analysis whenever the position, engine toggle, time limit, or depth changes. It terminates the worker when the engine is turned off or the game ends. If WebAssembly cannot initialize after one retry, the worker reports the fallback and runs the TypeScript engine instead.
+The production worker loads the WebAssembly module and forwards the same messages. The UI starts a fresh analysis whenever the position, engine toggle, time limit, or depth changes. A completed worker and its verified transposition table stay alive for the next move; an active worker is terminated when its position becomes obsolete. The worker is also terminated when the engine is turned off or the game ends. If WebAssembly cannot initialize after one retry, the worker reports the fallback and runs the TypeScript engine instead.
 
 ## Reading the analysis
 
@@ -477,9 +486,9 @@ npm run typecheck
 npm run build
 ```
 
-`engine:test:full` compares both searches through 6 ply on curated positions and compares movement, every legal wall, candidate ordering, paths, and evaluation on 2,000 deterministic random positions. `engine:benchmark` reports TypeScript and WebAssembly NPS on fixed positions and fails if WebAssembly is slower. `npm run build` creates the GitHub Pages output in `dist-pages`.
+`engine:test:full` compares both exhaustive searches through 3 ply on curated positions and compares movement, every legal wall, ordering, paths, and evaluation on 2,000 deterministic random positions. `engine:benchmark` reports TypeScript and WebAssembly NPS on fixed positions and fails if WebAssembly is slower. `npm run build` creates the GitHub Pages output in `dist-pages`.
 
-For a quicker development check, `npm run engine:test` uses 4 ply and 250 random positions. The worker backend can be selected internally with `VITE_ENGINE_BACKEND=wasm`, `typescript`, or `compare`; production defaults to `wasm`.
+For a quicker development check, `npm run engine:test` uses 2 ply and 250 random positions. The worker backend can be selected internally with `VITE_ENGINE_BACKEND=wasm`, `typescript`, or `compare`; production defaults to `wasm`.
 
 ## Deployment
 
@@ -498,11 +507,11 @@ When changing engine behavior, describe the rule or evaluation change and includ
 ## Known limitations
 
 - The engine is an analysis aid, not a solved-game oracle.
-- Wall search is selective rather than exhaustive, so not every legal wall placement is considered at every node.
+- Wall generation is exhaustive, but a finite search depth can still hide the eventual consequence of a legal move beyond the horizon.
 - Evaluation is handcrafted and path-based; it is not a trained NNUE engine.
 - A finite depth and time limit can cause a tactical win or loss beyond the current search horizon to be missed.
 - The native engine is single-threaded and avoids browser features that require cross-origin isolation.
-- The native transposition table is fixed at 32 MiB and is discarded with the worker when a new search starts.
+- The native transposition table is fixed at 32 MiB. It survives completed moves while the worker remains alive, but is discarded when an active search must be cancelled or the engine is turned off.
 
 ## License
 
