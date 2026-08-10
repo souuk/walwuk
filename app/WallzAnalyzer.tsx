@@ -87,7 +87,7 @@ export default function WallzAnalyzer() {
   const handleSquare = (square: Square) => {
     const move = legalPawn.find((candidate) => sameSquare(candidate.to, square));
     if (!move) {
-      setNotice("Choose one of the softly marked destination squares.");
+      setNotice("");
       return;
     }
     commitMove(
@@ -155,7 +155,7 @@ export default function WallzAnalyzer() {
   }, [undo, redo]);
 
   const playBest = () => {
-    if (!analysis?.bestMove) return;
+    if (currentWinner !== null || !analysis?.bestMove) return;
     commitMove(
       applyMove(state, analysis.bestMove),
       `Engine line played: ${formatMove(analysis.bestMove, state.turn)}.`,
@@ -188,14 +188,14 @@ export default function WallzAnalyzer() {
   const blueScore = analysis ? analysis.score * (state.turn === 0 ? 1 : -1) : 0;
   const evalPercent = Math.max(8, Math.min(92, 50 + blueScore / 12));
   const evaluationLabel = !engineEnabled
-    ? "Engine off"
+    ? "engine off"
     : !analysis
-      ? thinking ? "Calculating…" : "—"
+      ? thinking ? "calculating…" : "—"
       : Math.abs(blueScore) > 90_000
-        ? blueScore > 0 ? "Blue has a forced win" : "Amber has a forced win"
+        ? blueScore > 0 ? "blue has a forced win" : "amber has a forced win"
         : blueScore === 0
-          ? "Even"
-          : `${blueScore > 0 ? "Blue" : "Amber"} +${(Math.abs(blueScore) / 100).toFixed(2)} moves`;
+          ? "even"
+          : `${blueScore > 0 ? "blue" : "amber"} +${(Math.abs(blueScore) / 100).toFixed(2)} moves`;
 
   const displaySquare = (displayRow: number, displayColumn: number): Square => rotated
     ? { r: 8 - displayRow, c: 8 - displayColumn }
@@ -205,28 +205,28 @@ export default function WallzAnalyzer() {
     <main className="app-shell">
       <header className="topbar">
         <div className="brand">
-          <h1>Walwuk</h1>
+          <h1>walwuk</h1>
         </div>
         <div className={`engine-status ${thinking ? "thinking" : ""}`}>
-          <i />{thinking ? "Calculating" : engineEnabled ? "Engine on" : "Engine off"}
+          <i />{thinking ? "calculating" : engineEnabled ? "engine on" : "engine off"}
         </div>
       </header>
 
       <section className="workspace">
         <aside className="panel controls-panel">
           <div className="game-actions">
-            <button className="new-game" onClick={reset}>New game</button>
+            <button className="new-game" onClick={reset}>new game</button>
             <button className="history-button" disabled={!past.length} onClick={undo} title="Left arrow" aria-label="Undo move">←<small>Undo</small></button>
             <button className="history-button" disabled={!future.length} onClick={redo} title="Right arrow" aria-label="Redo move">→<small>Redo</small></button>
             <button className="history-button" onClick={() => setRotated((value) => !value)} aria-label="Rotate board">↻<small>Rotate</small></button>
           </div>
 
           <div className="wall-reserves">
-            <div><span><i className="blue-chip" />Blue</span><strong>{state.wallsLeft[0]}</strong></div>
-            <div><span><i className="amber-chip" />Amber</span><strong>{state.wallsLeft[1]}</strong></div>
+            <div><span><i className="blue-chip" />blue</span><strong>{state.wallsLeft[0]}</strong></div>
+            <div><span><i className="amber-chip" />amber</span><strong>{state.wallsLeft[1]}</strong></div>
           </div>
           <div className="engine-toggle-card">
-            <strong>Engine</strong>
+            <strong>engine</strong>
             <button
               type="button"
               className={`toggle ${engineEnabled ? "on" : ""}`}
@@ -287,21 +287,23 @@ export default function WallzAnalyzer() {
           </div>
           <div className="status-line">
             <span>{notice}</span>
-            <span>{currentWinner !== null ? `${currentWinner === 0 ? "Blue" : "Amber"} wins` : `Paths ${bluePath.distance} / ${amberPath.distance}`}</span>
+            <span>{currentWinner !== null ? `${currentWinner === 0 ? "blue" : "amber"} wins` : `paths ${bluePath.distance} / ${amberPath.distance}`}</span>
           </div>
         </section>
 
         <aside className="panel analysis-panel">
           <div className="evaluation-hero">
-            <small>Eval</small><strong>{evaluationLabel}</strong>
+            <small>eval</small><strong>{evaluationLabel}</strong>
             <div className={`eval-track ${!engineEnabled ? "disabled" : ""}`}><div className="eval-blue" style={{ width: `${engineEnabled ? evalPercent : 50}%` }} /><i style={{ left: `${engineEnabled ? evalPercent : 50}%` }} /></div>
-            <div className="eval-ends"><span>Blue</span><span>Amber</span></div>
+            <div className="eval-ends"><span>blue</span><span>amber</span></div>
           </div>
-          <div className="best-move-card">
-            <small>Best</small>
-            <strong>{analysis?.bestMove ? formatMove(analysis.bestMove, state.turn) : engineEnabled ? "Reading the board" : "Analysis paused"}</strong>
-            <button disabled={!analysis?.bestMove || thinking} onClick={playBest}>Play</button>
-          </div>
+          {currentWinner === null && (
+            <div className="best-move-card">
+              <small>best</small>
+              <strong>{analysis?.bestMove ? formatMove(analysis.bestMove, state.turn) : engineEnabled ? "reading the board" : "analysis paused"}</strong>
+              <button disabled={!analysis?.bestMove || thinking} onClick={playBest}>play</button>
+            </div>
+          )}
         </aside>
       </section>
     </main>
