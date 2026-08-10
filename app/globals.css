@@ -20,6 +20,7 @@ button, input { font: inherit; }
 button { color: inherit; }
 
 .app-shell { min-height: 100vh; text-transform: lowercase; }
+.app-shell * { font-family: inherit !important; text-transform: lowercase !important; letter-spacing: normal !important; }
 .topbar { height: 76px; padding: 0 28px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: rgba(251,244,229,.94); }
 .brand { display: flex; align-items: center; gap: 12px; }
 .brand-mark { width: 39px; height: 39px; display: grid; place-items: center; border-radius: 50%; background: var(--ink); color: #fff8e9; font: 800 20px ui-monospace, monospace; box-shadow: 0 3px 9px rgba(72,53,34,.2); }

@@ -207,9 +207,6 @@ export default function WallzAnalyzer() {
         <div className="brand">
           <h1>walwuk</h1>
         </div>
-        <div className={`engine-status ${thinking ? "thinking" : ""}`}>
-          <i />{thinking ? "calculating" : engineEnabled ? "engine on" : "engine off"}
-        </div>
       </header>
 
       <section className="workspace">
