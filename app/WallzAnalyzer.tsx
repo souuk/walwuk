@@ -11,6 +11,7 @@ import {
   type AnalysisResult,
   type GameState,
   type Move,
+  type MoveExplanation,
   type Square,
   type Wall,
 } from "./engine";
@@ -36,7 +37,7 @@ export function WallzAnalyzer() {
   const [maxDepth, setMaxDepth] = useState(8);
   const [rotated, setRotated] = useState(false);
   const [notice, setNotice] = useState("");
-  const [moveExplanation, setMoveExplanation] = useState("");
+  const [moveExplanation, setMoveExplanation] = useState<MoveExplanation | null>(null);
   const workerRef = useRef<Worker | null>(null);
 
   const legalPawn = useMemo(() => legalPawnMoves(state), [state]);
@@ -90,7 +91,7 @@ export function WallzAnalyzer() {
     setFuture([]);
     setState(next);
     setNotice(message);
-    setMoveExplanation(explainMove(state, move, next));
+    setMoveExplanation(explainMove(state, move, next, analysis?.bestMove ?? null));
   };
 
   const handleSquare = (square: Square) => {
@@ -128,7 +129,7 @@ export function WallzAnalyzer() {
     setState(cloneState(INITIAL_STATE));
     setAnalysis(null);
     setNotice("");
-    setMoveExplanation("");
+    setMoveExplanation(null);
   };
 
   const undo = useCallback(() => {
@@ -138,7 +139,7 @@ export function WallzAnalyzer() {
     setFuture((items) => [...items, cloneState(state)]);
     setState(previous);
     setNotice("Move undone.");
-    setMoveExplanation("");
+    setMoveExplanation(null);
   }, [past, state]);
 
   const redo = useCallback(() => {
@@ -148,7 +149,7 @@ export function WallzAnalyzer() {
     setPast((items) => [...items, cloneState(state)]);
     setState(next);
     setNotice("Move restored.");
-    setMoveExplanation("");
+    setMoveExplanation(null);
   }, [future, state]);
 
   useEffect(() => {
@@ -331,9 +332,10 @@ export function WallzAnalyzer() {
               <button disabled={!analysis?.bestMove || thinking} onClick={playBest}>play</button>
             </div>
           )}
-          <div className="move-explanation">
-            <small>move explanation</small>
-            <p>{moveExplanation || "make a move to see how it changed the position."}</p>
+          <div className={`move-explanation ${moveExplanation ? `quality-${moveExplanation.quality}` : ""}`}>
+            <small>move quality</small>
+            <strong>{moveExplanation?.quality ?? "make a move"}</strong>
+            <p>{moveExplanation?.text ?? "the next move will get a short strategic explanation."}</p>
           </div>
         </aside>
       </section>
