@@ -69,8 +69,8 @@ button { color: inherit; }
 .square.light { background: var(--cream-light); }.square.dark { background: var(--cream-dark); }
 .square:after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; box-shadow: inset 0 0 0 3px rgba(255,252,243,.65); transition: opacity .15s; }.square:hover:after { opacity: 1; }
 .square.winner-periwinkle::before, .square.winner-blossom::before { content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: 0; animation: winner-wash .62s cubic-bezier(.2,.75,.25,1) var(--win-delay) forwards; }
-.square.winner-periwinkle::before { background: var(--blue); }
-.square.winner-blossom::before { background: var(--amber); }
+.square.winner-periwinkle::before { background: #e5e6fb; }
+.square.winner-blossom::before { background: #fbe7eb; }
 @keyframes winner-wash { 0% { opacity: 0; transform: scale(.82); } 55% { opacity: 1; transform: scale(1.02); } 100% { opacity: 1; transform: scale(1); } }
 .square.blue-path { box-shadow: inset 0 0 0 2px rgba(92,120,145,.16); }.square.amber-path { box-shadow: inset 0 0 0 2px rgba(181,122,72,.16); }.square.blue-path.amber-path { box-shadow: inset 0 0 0 2px rgba(129,103,91,.18); }
 .rank-label, .file-label { position: absolute; z-index: 2; color: rgba(80,64,47,.52); font: 700 clamp(7px, .65vw, 10px) ui-monospace, monospace; pointer-events: none; }.rank-label { left: 4px; top: 3px; }.file-label { right: 4px; bottom: 3px; }
