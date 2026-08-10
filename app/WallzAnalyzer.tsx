@@ -232,10 +232,12 @@ export default function WallzAnalyzer() {
               onClick={() => setEngineEnabled((enabled) => !enabled)}
             ><i /></button>
           </div>
-          <label className="control-label" htmlFor="think-time">Think time <b>{timeMs < 1000 ? `${timeMs} ms` : `${(timeMs / 1000).toFixed(1)} s`}</b></label>
-          <input id="think-time" className="range" type="range" min="250" max="5000" step="250" value={timeMs} onChange={(e) => setTimeMs(Number(e.target.value))} />
-          <label className="control-label" htmlFor="max-depth">Maximum depth <b>{maxDepth} ply</b></label>
-          <input id="max-depth" className="range" type="range" min="2" max="12" value={maxDepth} onChange={(e) => setMaxDepth(Number(e.target.value))} />
+          <div className="engine-controls">
+            <label className="control-label" htmlFor="think-time">thinking time <b>{timeMs < 1000 ? `${timeMs} ms` : `${(timeMs / 1000).toFixed(1)} s`}</b></label>
+            <input id="think-time" className="range" type="range" min="250" max="5000" step="250" value={timeMs} onChange={(e) => setTimeMs(Number(e.target.value))} />
+            <label className="control-label" htmlFor="max-depth">depth <b>{maxDepth} ply</b></label>
+            <input id="max-depth" className="range" type="range" min="2" max="12" value={maxDepth} onChange={(e) => setMaxDepth(Number(e.target.value))} />
+          </div>
         </aside>
 
         <section className="board-column">
