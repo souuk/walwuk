@@ -475,4 +475,4 @@ When changing engine behavior, describe the rule or evaluation change and includ
 
 ## License
 
-No license has been specified yet. Until a license is added, do not assume that the source may be reused, redistributed, or included in another project.
+walwuk is available under the [MIT License](LICENSE). Copyright © 2026 souwuk.
