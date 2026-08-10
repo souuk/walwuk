@@ -100,35 +100,41 @@ button { color: inherit; }
 @media (prefers-reduced-motion: reduce) { .circle-piece, .toggle i, .eval-blue, .eval-track i { transition: none; } }
 
 /* Compact interface */
-.topbar { height: 60px; padding: 0 22px; }
+.topbar { height: 64px; padding: 0 24px; }
 .brand-mark { width: 32px; height: 32px; font-size: 16px; box-shadow: none; }
 .brand p { display: none; }
-.workspace { min-height: calc(100vh - 60px); grid-template-columns: 200px minmax(500px, 1fr) 250px; }
-.panel { padding: 22px 18px; }
+.workspace { min-height: calc(100vh - 64px); grid-template-columns: 208px minmax(500px, 1fr) 264px; }
+.panel { padding: 24px 20px; }
+.controls-panel { display: flex; flex-direction: column; gap: 20px; }
 .section-heading span { display: none; }
 .section-heading { margin-bottom: 13px; }
 .section-heading h2 { font-size: 10px; }
-.game-actions { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.game-actions { grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .game-actions .new-game { grid-column: 1 / -1; }
-.new-game, .history-button { min-height: 39px; border-radius: 7px; box-shadow: none; }
+.new-game, .history-button { min-height: 42px; border-radius: 8px; box-shadow: none; }
 .history-button { font-size: 17px; }
 .history-button small { font-size: 7px; }
 .turn-indicator, .helper, .analysis-settings, .controls-panel .control-label, .controls-panel .range { display: none; }
-.wall-reserves { margin: 14px 0 18px; }
-.engine-toggle-card { padding: 11px; }
+.wall-reserves { gap: 10px; margin: 0; }
+.wall-reserves div { padding: 12px; }
+.engine-toggle-card { padding: 14px; }
 .engine-toggle-card span { display: none; }
-.board-column { padding: 24px; background: var(--paper); }
-.board-frame { width: min(100%, 640px); padding: 12px; border-radius: 10px; box-shadow: 0 10px 28px rgba(81,60,35,.11); }
-.status-line { width: min(100%, 640px); }
+.board-column { padding: 32px; background: var(--paper); }
+.board-frame { width: min(100%, 640px); padding: 14px; border-radius: 12px; box-shadow: 0 10px 28px rgba(81,60,35,.11); }
+.status-line { width: min(100%, 640px); min-height: 42px; padding: 14px 4px 0; gap: 24px; }
 .analysis-panel .section-heading { margin-bottom: 14px; }
-.evaluation-hero { padding-bottom: 16px; }
+.evaluation-hero { padding-bottom: 22px; }
 .evaluation-hero strong { font-size: 20px; }
-.best-move-card { padding: 13px; }
+.eval-track { margin-top: 18px; }
+.eval-ends { margin-top: 8px; }
+.best-move-card { margin-top: 20px; padding: 16px; border-radius: 10px; }
+.best-move-card strong { margin-top: 7px; }
+.best-move-card button { min-height: 36px; margin-top: 14px; }
 .best-move-card p, .metrics, .pv-block, .engine-note { display: none; }
 
 @media (max-width: 1040px) {
   .workspace { grid-template-columns: 190px minmax(430px, 1fr); }
-  .analysis-panel { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .analysis-panel { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
   .analysis-panel .section-heading { display: none; }
   .best-move-card { margin: 0; }
 }
@@ -137,12 +143,12 @@ button { color: inherit; }
   .topbar { height: 56px; padding: 0 14px; }
   .brand-mark { width: 30px; height: 30px; }
   .workspace { display: flex; min-height: calc(100vh - 56px); }
-  .controls-panel { padding: 14px; }
+  .controls-panel { padding: 16px; gap: 12px; }
   .wall-reserves { display: none; }
   .game-actions { grid-template-columns: repeat(3, 1fr); }
-  .engine-toggle-card { margin-top: 9px; }
-  .board-column { padding: 14px 8px; }
+  .engine-toggle-card { margin-top: 0; }
+  .board-column { padding: 18px 10px; }
   .board-frame { padding: 8px; }
-  .analysis-panel { display: block; padding: 18px 14px; }
+  .analysis-panel { display: block; padding: 22px 16px; }
   .evaluation-hero { margin-top: 0; }
 }
