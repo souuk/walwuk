@@ -338,7 +338,7 @@ export function WallzAnalyzer() {
             <div className="best-move-card">
               <small>best</small>
               <strong>{analysis?.bestMove ? formatMove(analysis.bestMove, state.turn).replace("Blue", "periwinkle").replace("Amber", "blossom") : engineEnabled ? "reading the board" : "analysis paused"}</strong>
-              <button disabled={!analysis?.bestMove || thinking} onClick={playBest}>play</button>
+              <button disabled={!analysis?.bestMove} onClick={playBest}>play</button>
             </div>
           )}
           <div className={`move-explanation ${moveExplanation ? `quality-${moveExplanation.quality}` : ""}`}>
