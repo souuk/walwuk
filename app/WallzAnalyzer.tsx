@@ -87,6 +87,7 @@ export default function WallzAnalyzer() {
   };
 
   const handleSquare = (square: Square) => {
+    if (currentWinner !== null) return;
     const move = legalPawn.find((candidate) => sameSquare(candidate.to, square));
     if (!move) {
       setNotice("");
@@ -99,6 +100,7 @@ export default function WallzAnalyzer() {
   };
 
   const handleWall = (wall: Wall) => {
+    if (currentWinner !== null) return;
     const placed = state.walls.some(
       (item) => item.r === wall.r && item.c === wall.c && item.o === wall.o,
     );
