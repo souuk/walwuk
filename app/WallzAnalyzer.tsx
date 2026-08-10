@@ -266,6 +266,15 @@ export function WallzAnalyzer() {
             <label className="control-label" htmlFor="max-depth">depth <b>{maxDepth} ply</b></label>
             <input id="max-depth" className="range" type="range" min="2" max="12" value={maxDepth} onChange={(e) => setMaxDepth(Number(e.target.value))} />
           </div>
+          <div className="engine-console" aria-live="polite">
+            <small>engine console</small>
+            <div><span>status</span><b>{thinking ? "searching" : engineEnabled ? analysis ? "ready" : "idle" : "off"}</b></div>
+            <div><span>searches</span><b>{(analysis?.nodes ?? 0).toLocaleString()}</b></div>
+            <div><span>depth</span><b>{analysis?.depth ?? 0} ply</b></div>
+            <div><span>speed</span><b>{(analysis?.nps ?? 0).toLocaleString()} nps</b></div>
+            <div><span>time</span><b>{analysis?.timeMs ?? 0} ms</b></div>
+            <div><span>tt hits</span><b>{(analysis?.ttHits ?? 0).toLocaleString()}</b></div>
+          </div>
         </aside>
 
         <section className="board-column">
