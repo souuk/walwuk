@@ -13,14 +13,17 @@ import {
   type Wall,
 } from "./engine";
 
-type WorkerMessage = { type: "progress" | "done"; result: AnalysisResult };
+interface WorkerMessage {
+  type: "progress" | "done";
+  result: AnalysisResult;
+}
 
 const cloneState = (state: GameState): GameState => JSON.parse(JSON.stringify(state));
 const sameSquare = (a: Square, b: Square) => a.r === b.r && a.c === b.c;
 const THINK_TIMES = [250, 500, 750, 1000, 1500, 2000, 3000, 5000, 7500, 10000, 15000, 30000];
 const playerLabel = (player: 0 | 1) => player === 0 ? "periwinkle" : "blossom";
 
-export default function WallzAnalyzer() {
+export function WallzAnalyzer() {
   const [state, setState] = useState<GameState>(cloneState(INITIAL_STATE));
   const [past, setPast] = useState<GameState[]>([]);
   const [future, setFuture] = useState<GameState[]>([]);

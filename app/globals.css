@@ -115,7 +115,7 @@ button { color: inherit; }
 .history-button { font-size: 17px; }
 .history-button small { font-size: 7px; }
 .turn-indicator, .helper, .analysis-settings { display: none; }
-.wall-reserves { gap: 10px; margin: 0; }
+.wall-reserves { grid-template-columns: 1fr; gap: 10px; margin: 0; }
 .wall-reserves div { padding: 12px; }
 .engine-toggle-card { padding: 14px; }
 .engine-toggle-card span { display: none; }

@@ -7,15 +7,19 @@ export type PawnMove = { kind: "pawn"; to: Square };
 export type WallMove = { kind: "wall"; wall: Wall };
 export type Move = PawnMove | WallMove;
 
-export type GameState = {
+export interface GameState {
   pawns: [Square, Square];
   walls: Wall[];
   wallsLeft: [number, number];
   turn: Player;
-};
+}
 
-export type AnalysisLimits = { maxDepth: number; timeMs: number };
-export type AnalysisResult = {
+export interface AnalysisLimits {
+  maxDepth: number;
+  timeMs: number;
+}
+
+export interface AnalysisResult {
   bestMove: Move | null;
   score: number;
   depth: number;
@@ -25,7 +29,7 @@ export type AnalysisResult = {
   timeMs: number;
   ttHits: number;
   selective: boolean;
-};
+}
 
 const SIZE = 9;
 const INF = 1_000_000;
