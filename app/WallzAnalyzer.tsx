@@ -31,6 +31,7 @@ export function WallzAnalyzer() {
   const [past, setPast] = useState<GameState[]>([]);
   const [future, setFuture] = useState<GameState[]>([]);
   const [engineEnabled, setEngineEnabled] = useState(true);
+  const [deepMode, setDeepMode] = useState(false);
   const [thinking, setThinking] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [timeMs, setTimeMs] = useState(1000);
@@ -75,14 +76,16 @@ export function WallzAnalyzer() {
       setThinking(false);
       setNotice("The engine paused unexpectedly. Toggle it off and on to retry.");
     };
-    worker.postMessage({ state, limits: { timeMs, maxDepth } });
+    const effectiveTimeMs = deepMode ? Infinity : timeMs;
+    const effectiveMaxDepth = deepMode ? 15 : maxDepth;
+    worker.postMessage({ state, limits: { timeMs: effectiveTimeMs, maxDepth: effectiveMaxDepth } });
 
     return () => {
       window.clearTimeout(startTimeout);
       worker.terminate();
       if (workerRef.current === worker) workerRef.current = null;
     };
-  }, [state, engineEnabled, timeMs, maxDepth, currentWinner]);
+  }, [state, engineEnabled, timeMs, maxDepth, deepMode, currentWinner]);
 
   useEffect(() => () => workerRef.current?.terminate(), []);
 
@@ -251,8 +254,18 @@ export function WallzAnalyzer() {
               onClick={() => setEngineEnabled((enabled) => !enabled)}
             ><i /></button>
           </div>
+          <div className="engine-toggle-card">
+            <strong>deep</strong>
+            <button
+              type="button"
+              className={`toggle ${deepMode ? "on" : ""}`}
+              role="switch"
+              aria-checked={deepMode}
+              onClick={() => setDeepMode((enabled) => !enabled)}
+            ><i /></button>
+          </div>
           <div className="engine-controls">
-            <label className="control-label" htmlFor="think-time">thinking time <b>{timeMs < 1000 ? `${timeMs} ms` : `${(timeMs / 1000).toFixed(1)} s`}</b></label>
+            <label className="control-label" htmlFor="think-time">thinking time <b>{deepMode ? "unlimited" : timeMs < 1000 ? `${timeMs} ms` : `${(timeMs / 1000).toFixed(1)} s`}</b></label>
             <input
               id="think-time"
               className="range"
@@ -261,10 +274,11 @@ export function WallzAnalyzer() {
               max={THINK_TIMES.length - 1}
               step="1"
               value={THINK_TIMES.indexOf(timeMs)}
+              disabled={deepMode}
               onChange={(e) => setTimeMs(THINK_TIMES[Number(e.target.value)])}
             />
-            <label className="control-label" htmlFor="max-depth">depth <b>{maxDepth} ply</b></label>
-            <input id="max-depth" className="range" type="range" min="2" max="12" value={maxDepth} onChange={(e) => setMaxDepth(Number(e.target.value))} />
+            <label className="control-label" htmlFor="max-depth">depth <b>{deepMode ? 15 : maxDepth} ply</b></label>
+            <input id="max-depth" className="range" type="range" min="2" max="12" value={maxDepth} disabled={deepMode} onChange={(e) => setMaxDepth(Number(e.target.value))} />
           </div>
           <div className="engine-console" aria-live="polite">
             <small>engine console</small>
