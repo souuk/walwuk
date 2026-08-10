@@ -86,7 +86,11 @@ interface WallMap {
   vertical: Uint8Array;
 }
 
+const wallMapCache = new WeakMap<Wall[], WallMap>();
+
 function createWallMap(walls: Wall[]): WallMap {
+  const cached = wallMapCache.get(walls);
+  if (cached) return cached;
   const horizontal = new Uint8Array(8 * SIZE);
   const vertical = new Uint8Array(SIZE * 8);
   for (let i = 0; i < walls.length; i++) {
@@ -99,7 +103,9 @@ function createWallMap(walls: Wall[]): WallMap {
       vertical[(wall.r + 1) * 8 + wall.c] = 1;
     }
   }
-  return { horizontal, vertical };
+  const map = { horizontal, vertical };
+  wallMapCache.set(walls, map);
+  return map;
 }
 
 function blockedByMap(ar: number, ac: number, br: number, bc: number, map: WallMap): boolean {
@@ -114,6 +120,7 @@ export function blocked(a: Square, b: Square, walls: Wall[]): boolean {
 export function shortestPath(
   state: GameState,
   player: Player,
+  wallMap = createWallMap(state.walls),
 ): { distance: number; path: Square[] } {
   const start = state.pawns[player];
   const targetRow = player === 0 ? 0 : 8;
@@ -121,7 +128,6 @@ export function shortestPath(
   const queue = new Uint8Array(SIZE * SIZE);
   const seen = new Uint8Array(SIZE * SIZE);
   const parent = new Int16Array(SIZE * SIZE);
-  const wallMap = createWallMap(state.walls);
   parent.fill(-1);
   queue[0] = startIndex;
   seen[startIndex] = 1;
@@ -156,12 +162,15 @@ export function shortestPath(
   return { distance: 99, path: [] };
 }
 
-export function legalPawnMoves(state: GameState, player = state.turn): PawnMove[] {
+export function legalPawnMoves(
+  state: GameState,
+  player = state.turn,
+  wallMap = createWallMap(state.walls),
+): PawnMove[] {
   const own = state.pawns[player];
   const other = state.pawns[(1 - player) as Player];
   const destinations: Square[] = [];
   const seen = new Uint8Array(SIZE * SIZE);
-  const wallMap = createWallMap(state.walls);
   const addDestination = (r: number, c: number) => {
     const index = r * SIZE + c;
     if (seen[index]) return;
@@ -210,7 +219,9 @@ export function isLegalWall(state: GameState, wall: Wall): boolean {
     }
   }
   const trial = { ...state, walls: [...state.walls, wall] };
-  return shortestPath(trial, 0).distance < 99 && shortestPath(trial, 1).distance < 99;
+  const trialWallMap = createWallMap(trial.walls);
+  return shortestPath(trial, 0, trialWallMap).distance < 99 &&
+    shortestPath(trial, 1, trialWallMap).distance < 99;
 }
 
 export function applyMove(state: GameState, move: Move): GameState {
@@ -279,25 +290,25 @@ function candidateWalls(state: GameState, us?: PathResult, them?: PathResult): W
     .map((wall) => ({ kind: "wall", wall }));
 }
 
-function generateMoves(state: GameState, us?: PathResult, them?: PathResult): Move[] {
-  return [...legalPawnMoves(state), ...candidateWalls(state, us, them)];
+function generateMoves(state: GameState, us?: PathResult, them?: PathResult, wallMap?: WallMap): Move[] {
+  return [...legalPawnMoves(state, state.turn, wallMap), ...candidateWalls(state, us, them)];
 }
 
-function evaluateAbsolute(state: GameState): number {
-  const blue = shortestPath(state, 0).distance;
-  const amber = shortestPath(state, 1).distance;
+function evaluateAbsolute(state: GameState, wallMap = createWallMap(state.walls)): number {
+  const blue = shortestPath(state, 0, wallMap).distance;
+  const amber = shortestPath(state, 1, wallMap).distance;
   const pathScore = (amber - blue) * 100;
   const wallScore = (state.wallsLeft[0] - state.wallsLeft[1]) * 13;
-  const mobilityBlue = legalPawnMoves(state, 0).length;
-  const mobilityAmber = legalPawnMoves(state, 1).length;
+  const mobilityBlue = legalPawnMoves(state, 0, wallMap).length;
+  const mobilityAmber = legalPawnMoves(state, 1, wallMap).length;
   const mobility = (mobilityBlue - mobilityAmber) * 4;
   return pathScore + wallScore + mobility;
 }
 
-export function staticEvaluation(state: GameState): number {
+export function staticEvaluation(state: GameState, wallMap = createWallMap(state.walls)): number {
   const won = winner(state);
   if (won !== null) return won === state.turn ? WIN : -WIN;
-  const absolute = evaluateAbsolute(state);
+  const absolute = evaluateAbsolute(state, wallMap);
   return state.turn === 0 ? absolute : -absolute;
 }
 
@@ -384,14 +395,21 @@ export function explainMove(
 type Bound = "exact" | "lower" | "upper";
 type TTEntry = { depth: number; score: number; bound: Bound; best: Move | null };
 
+const wallKeyCache = new WeakMap<Wall[], string>();
+
 function stateKey(state: GameState): string {
-  const walls = new Array<number>(state.walls.length);
-  for (let i = 0; i < state.walls.length; i++) {
-    const wall = state.walls[i];
-    walls[i] = (wall.o === "h" ? 0 : 1) * 64 + wall.r * 8 + wall.c;
+  let wallsKey = wallKeyCache.get(state.walls);
+  if (wallsKey === undefined) {
+    const walls = new Array<number>(state.walls.length);
+    for (let i = 0; i < state.walls.length; i++) {
+      const wall = state.walls[i];
+      walls[i] = (wall.o === "h" ? 0 : 1) * 64 + wall.r * 8 + wall.c;
+    }
+    walls.sort((a, b) => a - b);
+    wallsKey = walls.join(",");
+    wallKeyCache.set(state.walls, wallsKey);
   }
-  walls.sort((a, b) => a - b);
-  return `${state.turn}|${state.pawns[0].r}${state.pawns[0].c}|${state.pawns[1].r}${state.pawns[1].c}|${state.wallsLeft.join(",")}|${walls.join(",")}`;
+  return `${state.turn}|${state.pawns[0].r}${state.pawns[0].c}|${state.pawns[1].r}${state.pawns[1].c}|${state.wallsLeft.join(",")}|${wallsKey}`;
 }
 
 export function formatMove(move: Move, player?: Player): string {
@@ -449,8 +467,9 @@ export function analyze(
           const goal = state.turn === 0 ? 0 : 8;
           priority += (Math.abs(state.pawns[state.turn].r - goal) - Math.abs(move.to.r - goal)) * 90;
         } else {
-          const afterUs = shortestPath(next, state.turn).distance;
-          const afterThem = shortestPath(next, (1 - state.turn) as Player).distance;
+          const nextWallMap = createWallMap(next.walls);
+          const afterUs = shortestPath(next, state.turn, nextWallMap).distance;
+          const afterThem = shortestPath(next, (1 - state.turn) as Player, nextWallMap).distance;
           priority += (afterThem - beforeThem) * 120 - (afterUs - beforeUs) * 90;
         }
         return { move, priority };
@@ -464,7 +483,10 @@ export function analyze(
     checkTime();
     const won = winner(state);
     if (won !== null) return won === state.turn ? WIN - ply : -WIN + ply;
-    if (depth <= 0) return staticEvaluation(state);
+    if (depth <= 0) {
+      const wallMap = createWallMap(state.walls);
+      return staticEvaluation(state, wallMap);
+    }
 
     const key = stateKey(state);
     const cached = tt.get(key);
@@ -477,16 +499,17 @@ export function analyze(
       if (alpha >= beta) return cached.score;
     }
 
-    const currentPath = shortestPath(state, state.turn);
-    const opposingPath = shortestPath(state, (1 - state.turn) as Player);
+    const wallMap = createWallMap(state.walls);
+    const currentPath = shortestPath(state, state.turn, wallMap);
+    const opposingPath = shortestPath(state, (1 - state.turn) as Player, wallMap);
     const moves = orderMoves(
       state,
-      generateMoves(state, currentPath, opposingPath),
+      generateMoves(state, currentPath, opposingPath, wallMap),
       cached?.best ?? null,
       currentPath.distance,
       opposingPath.distance,
     );
-    if (!moves.length) return staticEvaluation(state);
+    if (!moves.length) return staticEvaluation(state, wallMap);
     let bestScore = -INF;
     let best: Move | null = null;
     for (const move of moves) {
