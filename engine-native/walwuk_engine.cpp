@@ -17,6 +17,7 @@ constexpr int kWin = 100'000;
 constexpr uint16_t kNoMove = 0xffff;
 constexpr uint16_t kWallMove = 0x8000;
 constexpr uint16_t kVerticalWall = 0x4000;
+constexpr int kMaximumPvLength = 24;
 constexpr std::size_t kTranspositionClusterCount = 1U << 18;
 constexpr int kTranspositionClusterSize = 4;
 
@@ -145,6 +146,7 @@ struct SearchMoveList {
 };
 
 enum class Bound : uint8_t { kExact, kLower, kUpper };
+enum class SearchMode : uint8_t { kExhaustive, kSelective };
 
 struct TranspositionEntry {
   uint64_t horizontal_walls = 0;
@@ -170,13 +172,14 @@ struct AnalysisResult {
   int score = 0;
   int depth = 0;
   int pv_length = 0;
-  std::array<uint16_t, 15> pv{};
+  std::array<uint16_t, kMaximumPvLength> pv{};
   uint64_t nodes = 0;
   uint64_t transposition_hits = 0;
   int nps = 0;
   int time_ms = 0;
   const char* stop_reason = "depth";
   const char* score_bound = "exact";
+  bool selective = false;
 };
 
 std::vector<TranspositionCluster> transposition_table(
@@ -502,8 +505,30 @@ bool WallTouchesWitness(const PathResult& path, int id, bool vertical) {
   return ((candidates >> id) & 1U) != 0;
 }
 
+bool IsSelectiveWallCandidate(
+    const Position& position, const std::array<PathResult, 2>& paths, int id,
+    bool vertical) {
+  if (WallTouchesWitness(paths[0], id, vertical) ||
+      WallTouchesWitness(paths[1], id, vertical)) {
+    return true;
+  }
+  const int wall_row = id / 8;
+  const int wall_column = id % 8;
+  for (const uint8_t pawn : position.pawns) {
+    const int pawn_row = pawn / 9;
+    const int pawn_column = pawn % 9;
+    int row_distance = wall_row - pawn_row;
+    int column_distance = wall_column - pawn_column;
+    if (row_distance < 0) row_distance = -row_distance;
+    if (column_distance < 0) column_distance = -column_distance;
+    if (row_distance <= 1 && column_distance <= 1) return true;
+  }
+  return false;
+}
+
 SearchMoveList GenerateSearchMoves(
-    Position* position, const std::array<PathResult, 2>& paths) {
+    Position* position, const std::array<PathResult, 2>& paths,
+    SearchMode mode = SearchMode::kExhaustive) {
   SearchMoveList result;
   const int player = position->turn;
   const MoveList pawn_moves = LegalPawnMoves(*position, player);
@@ -526,6 +551,10 @@ SearchMoveList GenerateSearchMoves(
           continue;
         }
         const int id = row * 8 + column;
+        if (mode == SearchMode::kSelective &&
+            !IsSelectiveWallCandidate(*position, paths, id, vertical)) {
+          continue;
+        }
         AddWallUnchecked(position, row, column, vertical);
         std::array<PathResult, 2> child_paths = paths;
         bool legal = true;
@@ -690,7 +719,8 @@ std::string ResultJson(const AnalysisResult& result) {
   output << "],\"nodes\":" << result.nodes << ",\"nps\":" << result.nps
          << ",\"timeMs\":" << result.time_ms << ",\"ttHits\":"
          << result.transposition_hits
-         << ",\"selective\":false,\"stopReason\":\""
+         << ",\"selective\":" << (result.selective ? "true" : "false")
+         << ",\"stopReason\":\""
          << result.stop_reason << "\",\"bound\":\""
          << result.score_bound << "\",\"backend\":\"wasm\"}";
   return output.str();
@@ -700,15 +730,18 @@ class Search {
  public:
   Search(const Position& initial, int max_depth, double time_ms,
          int root_index = 0, int root_count = 1,
-         bool start_new_generation = true)
+         bool start_new_generation = true,
+         SearchMode mode = SearchMode::kExhaustive)
       : initial_(initial),
         max_depth_(max_depth),
         time_ms_(time_ms),
         root_index_(root_index),
-        root_count_(root_count) {
+        root_count_(root_count),
+        mode_(mode) {
     started_ = Clock::now();
     last_report_ = started_;
     if (start_new_generation) BeginSearchGeneration();
+    completed_.selective = mode_ == SearchMode::kSelective;
   }
 
   AnalysisResult Run() {
@@ -760,7 +793,7 @@ class Search {
     completed_.pv_length = 1;
 
     Position root = initial_;
-    SearchMoveList moves = GenerateSearchMoves(&root, root_paths);
+    SearchMoveList moves = GenerateSearchMoves(&root, root_paths, mode_);
     const SearchMove* selected = nullptr;
     for (int index = 0; index < moves.count; ++index) {
       if (moves.moves[index].move == root_move) {
@@ -808,7 +841,7 @@ class Search {
                                              : "exact";
 
     Position pv_position = ApplyMove(initial_, root_move);
-    for (int index = 1; index < depth && index < 15; ++index) {
+    for (int index = 1; index < depth && index < kMaximumPvLength; ++index) {
       const TranspositionEntry* entry = FindEntry(pv_position);
       if (entry == nullptr || entry->best_move == kNoMove) break;
       completed_.pv[completed_.pv_length++] = entry->best_move;
@@ -977,7 +1010,12 @@ class Search {
       if (alpha >= beta) return cached_score;
     }
 
-    SearchMoveList moves = GenerateSearchMoves(position, paths);
+    if (mode_ == SearchMode::kSelective && ply > 0 && depth >= 6 &&
+        (cached == nullptr || cached->best_move == kNoMove)) {
+      --depth;
+    }
+
+    SearchMoveList moves = GenerateSearchMoves(position, paths, mode_);
     OrderMoves(*position, &moves,
                cached == nullptr ? kNoMove : cached->best_move,
                paths);
@@ -986,22 +1024,57 @@ class Search {
     int best_score = -kInfinity;
     uint16_t best_move = kNoMove;
     bool searched_move = false;
+    int searched_count = 0;
+    const int static_evaluation = StaticEvaluation(*position, paths);
     for (int index = 0; index < moves.count; ++index) {
       const uint16_t move = moves.moves[index].move;
       if (ply == 0 && root_count_ > 1 &&
           static_cast<int>(move % root_count_) != root_index_) {
         continue;
       }
+      const bool transposition_move =
+          cached != nullptr && move == cached->best_move;
+      const bool immediate_win =
+          !IsWallMove(move) &&
+          ((position->turn == 0 && MoveSquare(move) / 9 == 0) ||
+           (position->turn == 1 && MoveSquare(move) / 9 == 8));
+      if (mode_ == SearchMode::kSelective && ply > 0 &&
+          IsWallMove(move) && !transposition_move && !immediate_win) {
+        const int plausible_move_limit = 8 + 4 * depth;
+        if (depth <= 5 && searched_count >= plausible_move_limit) continue;
+        if (depth <= 3 && searched_count >= 4 &&
+            static_evaluation + 140 * depth <= alpha) {
+          continue;
+        }
+      }
       searched_move = true;
+      ++searched_count;
       const uint8_t original_pawn = position->pawns[position->turn];
       MakeMove(position, move);
       int score;
-      if (index == 0) {
+      if (searched_count == 1) {
         score = -Negamax(position, moves.moves[index].child_paths, depth - 1,
                          -beta, -alpha, ply + 1);
       } else {
-        score = -Negamax(position, moves.moves[index].child_paths, depth - 1,
-                         -alpha - 1, -alpha, ply + 1);
+        int search_depth = depth - 1;
+        const bool reduce =
+            mode_ == SearchMode::kSelective && ply > 0 && depth >= 3 &&
+            searched_count > 4 && !transposition_move && !immediate_win;
+        if (reduce) {
+          int reduction = 1;
+          if (depth >= 6 && searched_count > 10) reduction = 2;
+          const int reduced_depth =
+              search_depth > reduction ? search_depth - reduction : 0;
+          score = -Negamax(position, moves.moves[index].child_paths,
+                           reduced_depth, -alpha - 1, -alpha, ply + 1);
+          if (!timed_out_ && score > alpha) {
+            score = -Negamax(position, moves.moves[index].child_paths,
+                             search_depth, -alpha - 1, -alpha, ply + 1);
+          }
+        } else {
+          score = -Negamax(position, moves.moves[index].child_paths,
+                           search_depth, -alpha - 1, -alpha, ply + 1);
+        }
         if (!timed_out_ && score > alpha && score < beta) {
           score = -Negamax(position, moves.moves[index].child_paths,
                            depth - 1, -beta, -alpha, ply + 1);
@@ -1032,7 +1105,7 @@ class Search {
   void ExtractPrincipalVariation(int depth) {
     completed_.pv_length = 0;
     Position position = initial_;
-    for (int index = 0; index < depth && index < 15; ++index) {
+    for (int index = 0; index < depth && index < kMaximumPvLength; ++index) {
       const TranspositionEntry* entry = FindEntry(position);
       if (entry == nullptr || entry->best_move == kNoMove) break;
       const uint16_t move = entry->best_move;
@@ -1047,6 +1120,7 @@ class Search {
   double time_ms_;
   int root_index_;
   int root_count_;
+  SearchMode mode_;
   Clock::time_point started_;
   Clock::time_point last_report_;
   uint64_t nodes_ = 0;
@@ -1136,6 +1210,35 @@ EMSCRIPTEN_KEEPALIVE void walwuk_analyze_split(
       root_index >= 0 && root_index < safe_root_count ? root_index : 0;
   walwuk::Search search(position, max_depth, time_ms, safe_root_index,
                         safe_root_count);
+  walwuk::exported_result = walwuk::ResultJson(search.Run());
+}
+
+EMSCRIPTEN_KEEPALIVE void walwuk_analyze_selective(
+    int pawn_zero, int pawn_one, int walls_zero, int walls_one, int turn,
+    uint32_t horizontal_low, uint32_t horizontal_high, uint32_t vertical_low,
+    uint32_t vertical_high, int max_depth, double time_ms) {
+  const walwuk::Position position = walwuk::BuildPosition(
+      pawn_zero, pawn_one, walls_zero, walls_one, turn, horizontal_low,
+      horizontal_high, vertical_low, vertical_high);
+  walwuk::Search search(position, max_depth, time_ms, 0, 1, true,
+                        walwuk::SearchMode::kSelective);
+  walwuk::exported_result = walwuk::ResultJson(search.Run());
+}
+
+EMSCRIPTEN_KEEPALIVE void walwuk_analyze_selective_split(
+    int pawn_zero, int pawn_one, int walls_zero, int walls_one, int turn,
+    uint32_t horizontal_low, uint32_t horizontal_high, uint32_t vertical_low,
+    uint32_t vertical_high, int max_depth, double time_ms, int root_index,
+    int root_count) {
+  const walwuk::Position position = walwuk::BuildPosition(
+      pawn_zero, pawn_one, walls_zero, walls_one, turn, horizontal_low,
+      horizontal_high, vertical_low, vertical_high);
+  const int safe_root_count = root_count > 0 ? root_count : 1;
+  const int safe_root_index =
+      root_index >= 0 && root_index < safe_root_count ? root_index : 0;
+  walwuk::Search search(position, max_depth, time_ms, safe_root_index,
+                        safe_root_count, true,
+                        walwuk::SearchMode::kSelective);
   walwuk::exported_result = walwuk::ResultJson(search.Run());
 }
 

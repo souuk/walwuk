@@ -100,7 +100,7 @@ export function WallzAnalyzer() {
       setAnalysis(null);
     }, 0);
     const effectiveTimeMs = deepMode ? Infinity : timeMs;
-    const effectiveMaxDepth = deepMode ? 15 : maxDepth;
+    const effectiveMaxDepth = deepMode ? 20 : maxDepth;
     worker.postMessage({ state, limits: { timeMs: effectiveTimeMs, maxDepth: effectiveMaxDepth } });
 
     return () => window.clearTimeout(startTimeout);
@@ -298,7 +298,7 @@ export function WallzAnalyzer() {
               disabled={deepMode}
               onChange={(e) => setTimeMs(THINK_TIMES[Number(e.target.value)])}
             />
-            <label className="control-label" htmlFor="max-depth">depth <b>{deepMode ? 15 : maxDepth} ply</b></label>
+            <label className="control-label" htmlFor="max-depth">depth <b>{deepMode ? 20 : maxDepth} ply</b></label>
             <input id="max-depth" className="range" type="range" min="2" max="12" value={maxDepth} disabled={deepMode} onChange={(e) => setMaxDepth(Number(e.target.value))} />
           </div>
           <div className="engine-console" aria-live="polite">

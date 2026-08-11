@@ -29,6 +29,21 @@ interface WalwukModule {
     rootIndex: number,
     rootCount: number,
   ): void;
+  _walwuk_analyze_selective_split(
+    pawnZero: number,
+    pawnOne: number,
+    wallsZero: number,
+    wallsOne: number,
+    turn: number,
+    horizontalLow: number,
+    horizontalHigh: number,
+    verticalLow: number,
+    verticalHigh: number,
+    maxDepth: number,
+    timeMs: number,
+    rootIndex: number,
+    rootCount: number,
+  ): void;
   _walwuk_result(): number;
   UTF8ToString(pointer: number): string;
 }
@@ -164,6 +179,41 @@ export async function analyzeWasmSplit(
   };
   try {
     engineModule._walwuk_analyze_split(
+      packed.pawnZero,
+      packed.pawnOne,
+      packed.wallsZero,
+      packed.wallsOne,
+      packed.turn,
+      packed.horizontalLow,
+      packed.horizontalHigh,
+      packed.verticalLow,
+      packed.verticalHigh,
+      limits.maxDepth,
+      Number.isFinite(limits.timeMs) ? limits.timeMs : -1,
+      rootIndex,
+      rootCount,
+    );
+    return JSON.parse(engineModule.UTF8ToString(engineModule._walwuk_result())) as AnalysisResult;
+  } finally {
+    delete progressGlobal.__walwukProgress;
+  }
+}
+
+export async function analyzeWasmSelectiveSplit(
+  state: GameState,
+  limits: AnalysisLimits,
+  rootIndex: number,
+  rootCount: number,
+  onProgress?: (result: AnalysisResult) => void,
+): Promise<AnalysisResult> {
+  const engineModule = await loadModule();
+  const packed = packPosition(state);
+  const progressGlobal = globalThis as ProgressGlobal;
+  progressGlobal.__walwukProgress = (json) => {
+    onProgress?.(JSON.parse(json) as AnalysisResult);
+  };
+  try {
+    engineModule._walwuk_analyze_selective_split(
       packed.pawnZero,
       packed.pawnOne,
       packed.wallsZero,

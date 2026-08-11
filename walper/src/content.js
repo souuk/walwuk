@@ -368,7 +368,7 @@
 
   function displayAnalysis(result, signature) {
     if (!result || signature !== currentSignature) return;
-    setField("status", result.stopReason === "depth" && result.depth >= 15 ? "done" : "scanning");
+    setField("status", result.stopReason === "depth" && result.depth >= 20 ? "done" : "scanning");
     setField("best", globalThis.WalperCore.formatMove(result.bestMove, currentScan?.flipped));
     setField("winning", globalThis.WalperCore.formatEvaluation(result, currentState));
     setField("nodes", Number(result.nodes || 0).toLocaleString());

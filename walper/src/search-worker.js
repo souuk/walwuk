@@ -46,7 +46,7 @@ self.onmessage = async ({ data }) => {
     globalThis.__walwukProgress = (json) => {
       self.postMessage({ type: "progress", result: JSON.parse(json) });
     };
-    engine._walwuk_analyze_split(
+    engine._walwuk_analyze_selective_split(
       position.pawnZero,
       position.pawnOne,
       position.wallsZero,
@@ -56,7 +56,7 @@ self.onmessage = async ({ data }) => {
       position.horizontalHigh,
       position.verticalLow,
       position.verticalHigh,
-      15,
+      20,
       -1,
       data.workerIndex,
       data.workerCount,

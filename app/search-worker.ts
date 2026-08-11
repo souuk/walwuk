@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
 import type { AnalysisLimits, GameState } from "./engine";
-import { analyzeWasmSplit } from "./wasm-engine";
+import { analyzeWasmSelectiveSplit } from "./wasm-engine";
 
 interface SearchRequest {
   state: GameState;
@@ -13,7 +13,7 @@ interface SearchRequest {
 self.onmessage = async (event: MessageEvent<SearchRequest>) => {
   const { state, limits, workerIndex, workerCount } = event.data;
   try {
-    const result = await analyzeWasmSplit(
+    const result = await analyzeWasmSelectiveSplit(
       state,
       limits,
       workerIndex,

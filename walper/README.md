@@ -1,6 +1,6 @@
 # walper
 
-walper is a tiny local Chrome/Chromium sidekick that reads the visible classic Wallz board and analyzes it with walwuk's exhaustive C++/WebAssembly engine.
+walper is a tiny local Chrome/Chromium sidekick that reads the visible classic Wallz board and analyzes it with walwuk's plausible-move C++/WebAssembly engine.
 
 It reads only rendered page elements on `wallz.gg`. It does not send board data to a server, click the board, or play moves automatically.
 
@@ -41,9 +41,9 @@ The panel includes manual side, turn, and reserve overrides in case the website 
 
 ## Analysis
 
-Wallz `p2` maps to walwuk's upward-moving player zero, while Wallz `p1` maps to downward-moving player one. The extension divides the exhaustive root moves across as many as twelve isolated WebAssembly workers. Each worker has its own four-entry clustered transposition table with exact position verification, avoiding shared-memory races while retaining deeper and newer results more effectively. If the pool cannot start, walper automatically falls back to one worker. Every legal wall is considered at every visited search node.
+Wallz `p2` maps to walwuk's upward-moving player zero, while Wallz `p1` maps to downward-moving player one. The extension divides plausible root moves across as many as twelve isolated WebAssembly workers. Every legal pawn move is retained; walls are limited to placements touching a current shortest path or lying near either pawn. Each retained wall still receives full legality and path-existence validation. Every worker has its own four-entry clustered transposition table with exact position verification. If the pool cannot start, walper automatically falls back to one worker.
 
-Analysis has no thinking-time cutoff and continually deepens toward 15 ply. The panel always shows the best move from the latest fully completed depth, who that score favors, the current depth and speed, and the number of nodes searched for this position. Reaching 15 ply may take a very long time and still does not prove that the complete game is solved.
+Analysis has no thinking-time cutoff and continually deepens toward 20 ply. The panel always shows the best move from the latest fully completed depth, who that score favors, the current depth and speed, and the number of nodes searched for this position. Reaching 20 ply may take a very long time and still does not prove that the complete game is solved.
 
 Each position runs in a disposable worker. When a move or turn change is detected, walper immediately removes the old highlight, resets the node count, cancels that worker, and starts a clean analysis session for the new board.
 

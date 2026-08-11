@@ -19,7 +19,8 @@ test("the service worker delegates native analysis to a disposable worker", () =
     searchWorker,
     /^import createWalwukEngine from "\.\/engine\/walwuk-engine\.mjs";/,
   );
-  assert.match(searchWorker, /_walwuk_analyze_split/);
+  assert.match(searchWorker, /_walwuk_analyze_selective_split/);
+  assert.match(searchWorker, /\n\s+20,\n\s+-1,/);
 });
 
 test("the extension declares a module service worker", () => {

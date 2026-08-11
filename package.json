@@ -19,6 +19,8 @@
     "engine:test:full": "npm run engine:build && npm run engine:test:compile && node scripts/engine-parity.mjs --full",
     "engine:benchmark": "npm run engine:build && npm run engine:test:compile && node scripts/engine-benchmark.mjs",
     "engine:benchmark:pool": "npm run engine:build && npm run engine:test:compile && node scripts/engine-pool-benchmark.mjs",
+    "engine:benchmark:selective": "npm run engine:build && npm run engine:test:compile && node scripts/engine-selective-benchmark.mjs",
+    "engine:match": "npm run engine:build && npm run engine:test:compile && node scripts/engine-match.mjs",
     "walper:build": "npm run engine:build && node walper/build.mjs",
     "walper:test": "node --test walper/tests/*.test.mjs"
   },

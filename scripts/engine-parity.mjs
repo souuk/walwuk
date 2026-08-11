@@ -6,6 +6,7 @@ import {
   formatMove,
   generateRandomPositions,
   nativeAnalyze,
+  nativeAnalyzeSelective,
   nativeAnalyzeSplit,
   nativeBeginSearch,
   nativeRootMoves,
@@ -46,6 +47,24 @@ const finishedState = {
 const finishedResult = nativeAnalyze(finishedState, 4);
 assert.equal(finishedResult.bestMove, null, "finished position must not return a best move");
 assert.deepEqual(finishedResult.pv, [], "finished position must not return a principal variation");
+
+const selectiveFinishedResult = nativeAnalyzeSelective(finishedState, 4);
+assert.equal(selectiveFinishedResult.bestMove, null, "selective search must stop after a win");
+assert.equal(selectiveFinishedResult.selective, true, "selective search must identify its result mode");
+
+for (const fixture of fixtures) {
+  const selectiveResult = nativeAnalyzeSelective(fixture.state, 2);
+  assert.equal(selectiveResult.selective, true, `${fixture.name}: selective flag missing`);
+  assert.ok(
+    selectiveResult.bestMove === null ||
+      typescriptSnapshot(fixture.state).moves.includes(
+        selectiveResult.bestMove.kind === "pawn"
+          ? `p${selectiveResult.bestMove.to.r}${selectiveResult.bestMove.to.c}`
+          : `${selectiveResult.bestMove.wall.o}${selectiveResult.bestMove.wall.r}${selectiveResult.bestMove.wall.c}`,
+      ),
+    `${fixture.name}: selective search returned an illegal move`,
+  );
+}
 
 for (const fixture of fixtures.slice(0, 3)) {
   for (let depth = 1; depth <= maximumDepth; ++depth) {

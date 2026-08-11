@@ -106,7 +106,7 @@ coordinating web worker
 react interface
 ```
 
-The pool uses at most one fewer worker than the browser's reported logical-processor count, capped at twelve. Every legal root move belongs to exactly one deterministic partition. The coordinator accepts a depth only after every partition has completed it, then chooses the highest-scoring result with deterministic tie-breaking and combines node, speed, time, and cache-hit statistics. This parallelism changes throughput, not search coverage.
+The pool uses at most one fewer worker than the browser's reported logical-processor count, capped at twelve. Every retained root move belongs to exactly one deterministic partition. The coordinator accepts a depth only after every partition has completed it, then chooses the highest-scoring result with deterministic tie-breaking and combines node, speed, time, and cache-hit statistics. Parallelism does not further change the plausible candidate set.
 
 JavaScript crosses into each WebAssembly instance only when a search starts, when progress is reported, and when the final result is returned. Move generation, pathfinding, evaluation, recursion, pruning, and caching stay inside native code during a search.
 
@@ -218,24 +218,24 @@ The same pathfinder is used in three places:
 2. to evaluate a position;
 3. to reject walls that close every route.
 
-### 5. Generating walls exhaustively
+### 5. Generating plausible walls
 
-At every searched position, walwuk considers every location on the 8×8 wall grid in both orientations. Each placement must pass overlap, crossing, wall-reserve, and route-existence checks before it enters the move list:
+The production engine retains every legal pawn move but limits wall analysis to plausible placements: walls that touch either player's current shortest-path witness or lie near either pawn. Each retained wall still passes overlap, crossing, wall-reserve, and route-existence validation:
 
-```ts
-for (const o of ["h", "v"] as const) {
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
-      const wall = { r, c, o };
-      if (isLegalWall(state, wall)) moves.push({ kind: "wall", wall });
-    }
-  }
+```cpp
+if (WallTouchesWitness(paths[0], id, vertical) ||
+    WallTouchesWitness(paths[1], id, vertical)) {
+  return true;
+}
+// The remaining code retains anchors within one row and column of either pawn.
+if (row_distance <= 1 && column_distance <= 1) {
+  return true;
 }
 ```
 
-The production engine makes this exhaustive pass practical with an exact witness-path shortcut. Each shortest-path result records which wall placements could touch one known shortest route. If a proposed wall cannot touch that route, its distance is provably unchanged: adding an edge blocker cannot create a shorter route, and the old shortest route still exists. If the wall can touch the witness, the engine recomputes the path. No legal wall is omitted by this optimization.
+At non-root nodes through depth five, a depth-dependent move-count threshold can also prune late, low-priority wall candidates after stronger moves have been searched. This is deliberately selective: a legal but implausible wall can be omitted. The exhaustive native and TypeScript searches remain available for parity testing, benchmarking, and future tuning.
 
-The native pathfinder expands the 81 squares as compact bit sets, moves are applied and undone in place, and child path results are carried into recursion. These are representation and reuse optimizations; they do not weaken wall legality or search coverage.
+The native pathfinder expands the 81 squares as compact bit sets, moves are applied and undone in place, and child path results are carried into recursion. These representation optimizations reduce the cost of every retained branch.
 
 ### 6. Evaluating a position
 
@@ -331,7 +331,7 @@ if (score > alpha && score < beta) {
 }
 ```
 
-The narrow probe is an exact alpha-beta optimization, not selective pruning: a potentially better move always receives the full search needed to establish its score.
+The narrow probe itself is an exact alpha-beta optimization within the retained candidate set: a potentially better reduced move receives the full search needed to establish its score.
 
 ### 10. Caching repeated positions
 
@@ -491,6 +491,8 @@ npm run build
 
 `engine:test:full` compares both exhaustive searches through 3 ply on curated positions and compares movement, every legal wall, ordering, paths, and evaluation on 2,000 deterministic random positions. `engine:benchmark` reports TypeScript and WebAssembly NPS on fixed positions and fails if WebAssembly is slower. `npm run build` creates the GitHub Pages output in `dist-pages`.
 
+The production UI uses the plausible selective backend. Its development history, exhaustive comparison results, and color-swapped match harness are documented in [`docs/selective-engine-experiment.md`](docs/selective-engine-experiment.md).
+
 For a quicker development check, `npm run engine:test` uses 2 ply and 250 random positions. The worker backend can be selected internally with `VITE_ENGINE_BACKEND=wasm`, `typescript`, or `compare`; production defaults to `wasm`.
 
 ## Deployment
@@ -510,7 +512,7 @@ When changing engine behavior, describe the rule or evaluation change and includ
 ## Known limitations
 
 - The engine is an analysis aid, not a solved-game oracle.
-- Wall generation is exhaustive, but a finite search depth can still hide the eventual consequence of a legal move beyond the horizon.
+- Wall generation is selective. A legal wall outside the shortest-path and pawn-local candidate set can be omitted.
 - Evaluation is handcrafted and path-based; it is not a trained NNUE engine.
 - A finite depth and time limit can cause a tactical win or loss beyond the current search horizon to be missed.
 - Each native engine instance is single-threaded, but walwuk divides root moves among as many as twelve isolated WebAssembly workers without requiring cross-origin isolation.

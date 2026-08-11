@@ -17,7 +17,7 @@ import {
 
 const moduleUrl = new URL("../public/engine/walwuk-engine.mjs", import.meta.url);
 
-export { formatMove };
+export { INITIAL_STATE, applyMove, formatMove, generateMoves, winner };
 
 export const nativeEngine = await createEngine({
   locateFile: (path) => fileURLToPath(new URL(path, moduleUrl)),
@@ -135,6 +135,11 @@ export function nativeAnalyze(state, maxDepth, timeMs = -1) {
   return JSON.parse(nativeEngine.UTF8ToString(nativeEngine._walwuk_result()));
 }
 
+export function nativeAnalyzeSelective(state, maxDepth, timeMs = -1) {
+  nativeEngine._walwuk_analyze_selective(...packPosition(state), maxDepth, timeMs);
+  return JSON.parse(nativeEngine.UTF8ToString(nativeEngine._walwuk_result()));
+}
+
 export function nativeAnalyzeSplit(
   state,
   maxDepth,
@@ -143,6 +148,23 @@ export function nativeAnalyzeSplit(
   timeMs = -1,
 ) {
   nativeEngine._walwuk_analyze_split(
+    ...packPosition(state),
+    maxDepth,
+    timeMs,
+    rootIndex,
+    rootCount,
+  );
+  return JSON.parse(nativeEngine.UTF8ToString(nativeEngine._walwuk_result()));
+}
+
+export function nativeAnalyzeSelectiveSplit(
+  state,
+  maxDepth,
+  rootIndex,
+  rootCount,
+  timeMs = -1,
+) {
+  nativeEngine._walwuk_analyze_selective_split(
     ...packPosition(state),
     maxDepth,
     timeMs,
