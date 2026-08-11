@@ -45,3 +45,5 @@ yarn-error.log*
 /tsconfig.tsbuildinfo
 /public/engine/*
 !/public/engine/.gitkeep
+/walper/dist/
+/walper/walper-extension.zip

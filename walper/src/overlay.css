@@ -1,0 +1,157 @@
+#walper-root {
+  all: initial;
+  position: fixed;
+  z-index: 2147483647;
+  left: 14px;
+  bottom: 14px;
+  width: 230px;
+  color: #241f18;
+  background: #fff9ec;
+  border: 1px solid #d8ccb6;
+  border-radius: 14px;
+  box-shadow: 0 14px 42px rgb(28 22 14 / 24%);
+  font: 12px/1.35 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  overflow: hidden;
+}
+
+#walper-root *,
+#walper-root *::before,
+#walper-root *::after {
+  box-sizing: border-box;
+  font: inherit;
+}
+
+#walper-root .walper-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e3d8c4;
+}
+
+#walper-root .walper-header strong {
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
+#walper-root button {
+  color: inherit;
+  background: #f4ead6;
+  border: 1px solid #d8ccb6;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+#walper-root .walper-header button {
+  width: 24px;
+  height: 24px;
+}
+
+#walper-root .walper-body {
+  padding: 12px;
+}
+
+#walper-root.walper-collapsed {
+  width: 104px;
+}
+
+#walper-root.walper-collapsed .walper-body {
+  display: none;
+}
+
+#walper-root .walper-status {
+  color: #786b58;
+  font-size: 10px;
+  text-transform: lowercase;
+}
+
+#walper-root .walper-best {
+  min-height: 27px;
+  padding: 3px 0 8px;
+  font-size: 17px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+#walper-root .walper-grid {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 4px 8px;
+  margin: 0;
+  padding: 9px 0;
+  border-block: 1px solid #e3d8c4;
+}
+
+#walper-root .walper-grid dt {
+  color: #786b58;
+}
+
+#walper-root .walper-grid dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+#walper-root details {
+  margin-top: 9px;
+}
+
+#walper-root summary {
+  cursor: pointer;
+  color: #786b58;
+  user-select: none;
+}
+
+#walper-root label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+#walper-root input,
+#walper-root select {
+  min-width: 0;
+  width: 92px;
+  height: 28px;
+  color: inherit;
+  background: #fffdf7;
+  border: 1px solid #d8ccb6;
+  border-radius: 7px;
+  padding: 3px 6px;
+}
+
+#walper-root input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+}
+
+#walper-root .walper-rescan {
+  width: 100%;
+  margin-top: 10px;
+  padding: 6px;
+}
+
+.walper-board-suggestion {
+  fill: rgb(198 201 255 / 36%);
+  stroke: #eff0ff;
+  stroke-width: 4;
+  pointer-events: none;
+  animation: walper-pulse 1.15s ease-in-out infinite;
+  filter: drop-shadow(0 0 7px rgb(194 199 255 / 90%));
+}
+
+@keyframes walper-pulse {
+  0%, 100% { opacity: .62; }
+  50% { opacity: 1; }
+}
+
+@media (max-width: 620px) {
+  #walper-root {
+    left: 8px;
+    bottom: 8px;
+    width: min(220px, calc(100vw - 16px));
+  }
+}

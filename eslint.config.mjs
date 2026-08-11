@@ -17,6 +17,7 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "public/engine/**",
+    "walper/dist/**",
     "next-env.d.ts",
   ]),
   eslint.configs.recommended,
@@ -31,6 +32,7 @@ const eslintConfig = defineConfig([
         ...globals.browser,
         ...globals.node,
         ...globals.serviceworker,
+        chrome: "readonly",
       },
     },
     settings: {

@@ -17,7 +17,9 @@
     "engine:test:compile": "tsc app/engine.ts --target ES2022 --lib ES2022,DOM --module ES2022 --moduleResolution bundler --outDir .engine-test --skipLibCheck",
     "engine:test": "npm run engine:build && npm run engine:test:compile && node scripts/engine-parity.mjs",
     "engine:test:full": "npm run engine:build && npm run engine:test:compile && node scripts/engine-parity.mjs --full",
-    "engine:benchmark": "npm run engine:build && npm run engine:test:compile && node scripts/engine-benchmark.mjs"
+    "engine:benchmark": "npm run engine:build && npm run engine:test:compile && node scripts/engine-benchmark.mjs",
+    "walper:build": "npm run engine:build && node walper/build.mjs",
+    "walper:test": "node --test walper/tests/*.test.mjs"
   },
   "dependencies": {
     "react": "19.2.6",

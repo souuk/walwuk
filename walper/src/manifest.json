@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "walper",
+  "version": "0.1.0",
+  "description": "Local Wallz board scanner and walwuk move analysis.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://wallz.gg/*",
+    "https://www.wallz.gg/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://wallz.gg/*",
+        "https://www.wallz.gg/*"
+      ],
+      "css": ["overlay.css"],
+      "js": ["core.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "toggle walper"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
+}

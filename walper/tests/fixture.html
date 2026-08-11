@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>walper detector fixture</title>
+    <link rel="stylesheet" href="../src/overlay.css">
+    <style>
+      :root { --color-p1: #e9a8ba; --color-p2: #aebcf3; }
+      body { margin: 0; min-height: 100vh; background: #171511; color: white; }
+      .board { display: block; width: min(78vh, 78vw); margin: 20px auto; }
+      .cards { display: flex; justify-content: space-around; }
+    </style>
+  </head>
+  <body>
+    <div class="cards">
+      <div style="border: 1px solid var(--color-p2)"><span>walls · 9</span></div>
+      <div style="border: 1px solid var(--color-p1)"><span>walls · 8</span></div>
+    </div>
+    <svg class="board" role="grid" aria-label="Wallz board" viewBox="-44 -22 702 702">
+      <rect x="-14" y="-14" width="664" height="664" rx="22" fill="#4a4337"></rect>
+      <g id="board-layer" transform="rotate(180 318 318)"></g>
+    </svg>
+    <script>
+      const namespace = "http://www.w3.org/2000/svg";
+      const layer = document.querySelector("#board-layer");
+      for (let y = 0; y < 9; y += 1) {
+        for (let x = 0; x < 9; x += 1) {
+          const cell = document.createElementNS(namespace, "rect");
+          Object.entries({ x: 72 * x, y: 72 * y, width: 60, height: 60, rx: 9, fill: "#d8c9ad" })
+            .forEach(([name, value]) => cell.setAttribute(name, value));
+          layer.append(cell);
+        }
+      }
+      for (const wall of [
+        { x: 3 * 72, y: 4 * 72 + 60, width: 132, height: 12, fill: "var(--color-p1)" },
+        { x: 6 * 72 + 60, y: 1 * 72, width: 12, height: 132, fill: "var(--color-p2)" },
+      ]) {
+        const rect = document.createElementNS(namespace, "rect");
+        Object.entries(wall).forEach(([name, value]) => rect.setAttribute(name, value));
+        layer.append(rect);
+      }
+      for (const [player, x, y, active] of [["p1", 4, 0, true], ["p2", 4, 8, false]]) {
+        const group = document.createElementNS(namespace, "g");
+        if (active) {
+          const ring = document.createElementNS(namespace, "circle");
+          Object.entries({ cx: 72 * x + 30, cy: 72 * y + 30, r: 22, fill: "none" })
+            .forEach(([name, value]) => ring.setAttribute(name, value));
+          group.append(ring);
+        }
+        const pawn = document.createElementNS(namespace, "circle");
+        Object.entries({ cx: 72 * x + 30, cy: 72 * y + 30, r: 20, fill: `var(--color-${player})` })
+          .forEach(([name, value]) => pawn.setAttribute(name, value));
+        group.append(pawn);
+        layer.append(group);
+      }
+
+      globalThis.walperFixture = { messages: [], listeners: [] };
+      globalThis.chrome = {
+        storage: { local: { get: async () => ({}), set: async () => undefined } },
+        runtime: {
+          onMessage: { addListener: (listener) => walperFixture.listeners.push(listener) },
+          sendMessage: async (message) => {
+            walperFixture.messages.push(message);
+            return {
+              ok: true,
+              signature: message.signature,
+              result: {
+                bestMove: { kind: "pawn", to: { r: 1, c: 4 } },
+                depth: 4,
+                nps: 2500000,
+                stopReason: "time",
+              },
+            };
+          },
+        },
+      };
+    </script>
+    <script src="../src/core.js"></script>
+    <script src="../src/content.js"></script>
+  </body>
+</html>
