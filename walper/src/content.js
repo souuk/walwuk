@@ -82,6 +82,7 @@
   function scanWalls(layer) {
     const walls = [];
     for (const rect of layer.querySelectorAll(":scope > rect")) {
+      if (rect.matches("[data-walper-suggestion], .walper-board-suggestion")) continue;
       if (rect.hasAttribute("stroke")) continue;
       const width = numberAttribute(rect, "width");
       const height = numberAttribute(rect, "height");
@@ -370,6 +371,19 @@
     scanTimer = window.setTimeout(runScan, delay);
   }
 
+  function walperOwnedNode(node) {
+    if (!(node instanceof Element)) return false;
+    return node === root || root?.contains(node) ||
+      node.matches("[data-walper-suggestion], .walper-board-suggestion");
+  }
+
+  function walperOwnedMutation(mutation) {
+    if (walperOwnedNode(mutation.target)) return true;
+    if (mutation.type !== "childList") return false;
+    const changedNodes = [...mutation.addedNodes, ...mutation.removedNodes];
+    return changedNodes.length > 0 && changedNodes.every(walperOwnedNode);
+  }
+
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type === "walper-toggle") {
       settings.expanded = !settings.expanded;
@@ -390,7 +404,10 @@
     scheduleScan(0);
   });
 
-  const observer = new MutationObserver(() => scheduleScan());
+  const observer = new MutationObserver((mutations) => {
+    if (mutations.every(walperOwnedMutation)) return;
+    scheduleScan();
+  });
   observer.observe(document.documentElement, {
     attributes: true,
     childList: true,

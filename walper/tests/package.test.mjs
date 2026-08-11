@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const background = await readFile(new URL("../src/background.js", import.meta.url), "utf8");
+const content = await readFile(new URL("../src/content.js", import.meta.url), "utf8");
 const manifest = JSON.parse(
   await readFile(new URL("../src/manifest.json", import.meta.url), "utf8"),
 );
@@ -20,4 +21,12 @@ test("the extension declares a module service worker", () => {
     service_worker: "background.js",
     type: "module",
   });
+});
+
+test("the board scanner excludes its own recommendation marker", () => {
+  assert.match(
+    content,
+    /rect\.matches\("\[data-walper-suggestion\], \.walper-board-suggestion"\)/,
+  );
+  assert.match(content, /mutations\.every\(walperOwnedMutation\)/);
 });
