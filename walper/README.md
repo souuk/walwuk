@@ -25,6 +25,8 @@ The build requires the same pinned Emscripten 6.0.6 setup as walwuk. The unpacke
 
 The walper panel appears in the lower-left corner. Clicking the toolbar icon collapses or expands it.
 
+After rebuilding or replacing the folder, return to `chrome://extensions` and click walper's reload button before refreshing the Wallz tab.
+
 ## What it detects
 
 walper uses the site's visible SVG board rather than private application state:

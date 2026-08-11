@@ -1,3 +1,5 @@
+import createWalwukEngine from "./engine/walwuk-engine.mjs";
+
 const DEFAULT_LIMITS = Object.freeze({ maxDepth: 8, timeMs: 1000 });
 
 let enginePromise = null;
@@ -8,9 +10,7 @@ function engineUrl(path) {
 }
 
 async function initializeEngine() {
-  const moduleUrl = engineUrl("walwuk-engine.mjs");
-  const imported = await import(moduleUrl);
-  return imported.default({
+  return createWalwukEngine({
     locateFile: (path) => engineUrl(path),
   });
 }
