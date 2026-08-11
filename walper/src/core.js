@@ -49,10 +49,21 @@
       `${String.fromCharCode(97 + move.wall.c)}${move.wall.r + 1}`;
   }
 
+  function formatEvaluation(result, state) {
+    const score = Number(result?.score ?? 0);
+    if (!Number.isFinite(score) || !state) return "—";
+    if (Math.abs(score) < 10) return "even";
+    const favoredEnginePlayer = score > 0 ? state.turn : 1 - state.turn;
+    const player = enginePlayerName(favoredEnginePlayer);
+    if (Math.abs(score) >= 99_900) return `${player} · forced win`;
+    return `${player} ahead · +${(Math.abs(score) / 100).toFixed(2)}`;
+  }
+
   root.WalperCore = Object.freeze({
     ENGINE_TO_PLAYER,
     PLAYER_TO_ENGINE,
     enginePlayerName,
+    formatEvaluation,
     formatMove,
     stateSignature,
     toEngineState,

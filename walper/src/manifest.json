@@ -1,9 +1,16 @@
 {
   "manifest_version": 3,
   "name": "walper",
-  "version": "0.1.2",
-  "description": "Local Wallz board scanner and walwuk move analysis.",
-  "permissions": ["storage"],
+  "version": "0.2.0",
+  "description": "your tiny wallz sidekick, quietly thinking up a good move for you.",
+  "minimum_chrome_version": "116",
+  "permissions": ["storage", "offscreen"],
+  "icons": {
+    "16": "icons/walper-16.png",
+    "32": "icons/walper-32.png",
+    "48": "icons/walper-48.png",
+    "128": "icons/walper-128.png"
+  },
   "host_permissions": [
     "https://wallz.gg/*",
     "https://www.wallz.gg/*"
@@ -24,7 +31,11 @@
     }
   ],
   "action": {
-    "default_title": "toggle walper"
+    "default_title": "toggle walper",
+    "default_icon": {
+      "16": "icons/walper-16.png",
+      "32": "icons/walper-32.png"
+    }
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"

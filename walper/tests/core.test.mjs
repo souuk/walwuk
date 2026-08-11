@@ -3,7 +3,7 @@ import test from "node:test";
 
 await import("../src/core.js");
 
-const { formatMove, stateSignature, toEngineState } = globalThis.WalperCore;
+const { formatEvaluation, formatMove, stateSignature, toEngineState } = globalThis.WalperCore;
 
 const scan = {
   pawns: {
@@ -45,4 +45,11 @@ test("formats engine moves in Wallz board coordinates", () => {
     formatMove({ kind: "wall", wall: { r: 3, c: 2, o: "v" } }),
     "vertical wall · c4",
   );
+});
+
+test("describes an evaluation from the root side-to-move perspective", () => {
+  assert.equal(formatEvaluation({ score: 325 }, { turn: 1 }), "p1 ahead · +3.25");
+  assert.equal(formatEvaluation({ score: -125 }, { turn: 1 }), "p2 ahead · +1.25");
+  assert.equal(formatEvaluation({ score: 100000 }, { turn: 0 }), "p2 · forced win");
+  assert.equal(formatEvaluation({ score: 0 }, { turn: 0 }), "even");
 });

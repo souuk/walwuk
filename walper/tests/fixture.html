@@ -13,6 +13,7 @@
     </style>
   </head>
   <body>
+    <button id="move-pawn" type="button">move pawn</button>
     <div class="cards">
       <div style="border: 1px solid var(--color-p2)"><span>walls · 9</span></div>
       <div style="border: 1px solid var(--color-p1)"><span>walls · 8</span></div>
@@ -54,6 +55,9 @@
         group.append(pawn);
         layer.append(group);
       }
+      document.querySelector("#move-pawn").addEventListener("click", () => {
+        layer.querySelector('g circle[r="20"]').setAttribute("cy", "102");
+      });
 
       globalThis.walperFixture = { messages: [], listeners: [] };
       globalThis.chrome = {
@@ -62,18 +66,28 @@
           onMessage: { addListener: (listener) => walperFixture.listeners.push(listener) },
           sendMessage: async (message) => {
             walperFixture.messages.push(message);
-            document.body.dataset.walperRequests = String(walperFixture.messages.length);
-            return {
-              ok: true,
-              signature: message.signature,
-              result: {
+            const requests = walperFixture.messages.filter(({ type }) => type === "walper-analyze");
+            document.body.dataset.walperRequests = String(requests.length);
+            if (message.type !== "walper-analyze") return { ok: true };
+            const result = {
                 bestMove: location.search.includes("wall")
                   ? { kind: "wall", wall: { r: 3, c: 3, o: "h" } }
                   : { kind: "pawn", to: { r: 1, c: 4 } },
+                score: 325,
                 depth: 4,
+                nodes: 987654,
                 nps: 2500000,
-                stopReason: "time",
-              },
+                stopReason: "depth",
+              };
+            setTimeout(() => {
+              for (const listener of walperFixture.listeners) {
+                listener({ type: "walper-progress", signature: message.signature, result });
+              }
+            }, location.search.includes("slow") ? 300 : 20);
+            return {
+              ok: true,
+              started: true,
+              signature: message.signature,
             };
           },
         },

@@ -3,8 +3,6 @@
   const DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
     expanded: true,
-    maxDepth: 8,
-    timeMs: 1000,
     side: "auto",
     turn: "auto",
     p1Walls: "",
@@ -15,6 +13,7 @@
   let root = null;
   let scanTimer = 0;
   let currentScan = null;
+  let currentState = null;
   let currentSignature = "";
   let lastRequestedSignature = "";
 
@@ -191,18 +190,14 @@
           <dt>side</dt><dd data-field="side">—</dd>
           <dt>turn</dt><dd data-field="turn">—</dd>
           <dt>walls</dt><dd data-field="walls">—</dd>
+          <dt>winning</dt><dd data-field="winning">—</dd>
+          <dt>nodes</dt><dd data-field="nodes">0</dd>
           <dt>depth</dt><dd data-field="depth">—</dd>
           <dt>speed</dt><dd data-field="speed">—</dd>
         </dl>
         <details>
           <summary>settings</summary>
           <label><span>analysis</span><input data-setting="enabled" type="checkbox"></label>
-          <label><span>thinking time</span><select data-setting="timeMs">
-            <option value="250">250 ms</option><option value="500">500 ms</option>
-            <option value="1000">1 s</option><option value="3000">3 s</option>
-            <option value="5000">5 s</option><option value="10000">10 s</option>
-          </select></label>
-          <label><span>depth</span><input data-setting="maxDepth" type="number" min="1" max="15"></label>
           <label><span>my side</span><select data-setting="side">
             <option value="auto">auto</option><option value="p1">p1</option><option value="p2">p2</option>
           </select></label>
@@ -229,9 +224,7 @@
         const key = input.dataset.setting;
         settings[key] = input.type === "checkbox"
           ? input.checked
-          : input.type === "number" && key === "maxDepth"
-            ? Number(input.value)
-            : input.value;
+          : input.value;
         chrome.storage.local.set({ walperSettings: settings });
         lastRequestedSignature = "";
         scheduleScan(0);
@@ -266,6 +259,30 @@
     currentScan?.svg?.querySelectorAll("[data-walper-suggestion]").forEach((node) => node.remove());
   }
 
+  function resetAnalysisFields(status = "scanning") {
+    setField("status", status);
+    setField("best", "—");
+    setField("winning", "—");
+    setField("nodes", "0");
+    setField("depth", "—");
+    setField("speed", "—");
+  }
+
+  function invalidateAnalysis(status = "reading new turn") {
+    const signature = currentSignature;
+    currentSignature = "";
+    currentState = null;
+    lastRequestedSignature = "";
+    clearSuggestion();
+    resetAnalysisFields(status);
+    if (signature) {
+      chrome.runtime.sendMessage({
+        type: "walper-cancel",
+        signature,
+      }).catch(() => undefined);
+    }
+  }
+
   function drawSuggestion(move) {
     clearSuggestion();
     if (!move || !currentScan?.layer?.isConnected) return;
@@ -294,8 +311,10 @@
 
   function displayAnalysis(result, signature) {
     if (!result || signature !== currentSignature) return;
-    setField("status", result.stopReason === "depth" ? "done" : "scanning complete");
+    setField("status", result.stopReason === "depth" && result.depth >= 15 ? "done" : "scanning");
     setField("best", globalThis.WalperCore.formatMove(result.bestMove));
+    setField("winning", globalThis.WalperCore.formatEvaluation(result, currentState));
+    setField("nodes", Number(result.nodes || 0).toLocaleString());
     setField("depth", `${result.depth} ply`);
     setField("speed", `${Number(result.nps || 0).toLocaleString()} nps`);
     drawSuggestion(result.bestMove);
@@ -308,6 +327,8 @@
       setField("side", "—");
       setField("turn", "—");
       setField("walls", "—");
+      setField("winning", "—");
+      setField("nodes", "0");
       setField("depth", "—");
       setField("speed", "—");
       clearSuggestion();
@@ -328,21 +349,25 @@
     };
     const state = globalThis.WalperCore.toEngineState(scan, overrides);
     const signature = globalThis.WalperCore.stateSignature(state);
+    if (currentSignature && signature !== currentSignature) invalidateAnalysis();
     currentSignature = signature;
+    currentState = state;
     if (!settings.enabled) {
-      setField("status", "offline");
-      clearSuggestion();
+      invalidateAnalysis("offline");
       return;
     }
     if (signature === lastRequestedSignature) return;
     lastRequestedSignature = signature;
     setField("status", "scanning");
     setField("best", "thinking…");
+    setField("winning", "—");
+    setField("nodes", "0");
+    setField("depth", "—");
+    setField("speed", "—");
     chrome.runtime.sendMessage({
       type: "walper-analyze",
       state,
       signature,
-      limits: { maxDepth: settings.maxDepth, timeMs: settings.timeMs },
     }).then((response) => {
       if (!response || response.signature !== currentSignature) return;
       if (!response.ok) {
@@ -350,7 +375,6 @@
         setField("best", response.error ?? "unable to analyze");
         return;
       }
-      displayAnalysis(response.result, response.signature);
     }).catch(() => {
       if (signature !== currentSignature) return;
       setField("status", "engine offline");
@@ -362,6 +386,7 @@
     createOverlay();
     const scan = scanBoard();
     currentScan = scan.ok ? scan : currentScan;
+    if (!scan.ok && currentSignature) invalidateAnalysis(scan.reason);
     displayScan(scan);
     if (scan.ok) requestAnalysis(scan);
   }
@@ -384,15 +409,39 @@
     return changedNodes.length > 0 && changedNodes.every(walperOwnedNode);
   }
 
+  function mutationChangesPosition(mutation) {
+    const boardLayer = currentScan?.layer;
+    if (!boardLayer?.isConnected) return false;
+    const target = mutation.target instanceof Element ? mutation.target : null;
+    if (!target || (target !== boardLayer && !boardLayer.contains(target))) return false;
+    if (mutation.type === "attributes") {
+      const pawnGroup = target.closest("g");
+      return ["cx", "cy", "x", "y"].includes(mutation.attributeName) &&
+        Boolean(pawnGroup?.querySelector('circle[r="20"], image[width="40"][height="40"]'));
+    }
+    if (mutation.type !== "childList") return false;
+    const changedNodes = [...mutation.addedNodes, ...mutation.removedNodes];
+    return changedNodes.some((node) => {
+      if (!(node instanceof Element) || walperOwnedNode(node)) return false;
+      return node.matches('g, circle[r="20"], circle[r="22"], image, rect') ||
+        Boolean(node.querySelector?.(
+          'circle[r="20"], circle[r="22"], image[width="40"][height="40"]',
+        ));
+    });
+  }
+
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type === "walper-toggle") {
       settings.expanded = !settings.expanded;
       createOverlay();
       applyExpandedState();
       chrome.storage.local.set({ walperSettings: settings });
-    } else if (message?.type === "walper-progress") {
+    } else if (message?.type === "walper-progress" || message?.type === "walper-done") {
       displayAnalysis(message.result, message.signature);
-      if (message.signature === currentSignature) setField("status", "scanning");
+    } else if (message?.type === "walper-error" && message.signature === currentSignature) {
+      setField("status", "engine error");
+      setField("best", message.error ?? "unable to analyze");
+      clearSuggestion();
     }
   });
 
@@ -406,6 +455,11 @@
 
   const observer = new MutationObserver((mutations) => {
     if (mutations.every(walperOwnedMutation)) return;
+    if (mutations.some(mutationChangesPosition)) {
+      invalidateAnalysis();
+      scheduleScan(40);
+      return;
+    }
     scheduleScan();
   });
   observer.observe(document.documentElement, {
