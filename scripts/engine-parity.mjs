@@ -9,6 +9,7 @@ import {
   generateRandomPositions,
   nativeAnalyze,
   nativeAnalyzeSelective,
+  nativeAnalyzeSelectiveSplit,
   nativeAnalyzeSplit,
   nativeBeginSearch,
   nativeRootMoves,
@@ -87,6 +88,16 @@ const backwardPawnExplanation = explainMove(
 );
 assert.match(backwardPawnExplanation.text, /gives up 1 step/);
 assert.match(backwardPawnExplanation.text, /has no walls left/);
+
+const pooledSplitFixture = fixtures.find(({ name }) => name === "channelled routes");
+assert.ok(pooledSplitFixture, "pooled split fixture must exist");
+const pooledSplitResults = Array.from({ length: 12 }, (_, rootIndex) =>
+  nativeAnalyzeSelectiveSplit(pooledSplitFixture.state, 4, rootIndex, 12),
+);
+assert.ok(
+  pooledSplitResults.every(({ bestMove }) => bestMove !== null),
+  "every assigned walper root worker must report its completed best move",
+);
 
 for (const fixture of fixtures) {
   const selectiveResult = nativeAnalyzeSelective(fixture.state, 2);

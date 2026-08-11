@@ -28,7 +28,7 @@ constexpr int kMaximumRaceExtensions = 2;
 // This prevents a short horizon from treating a stockpile of ten walls as
 // only marginally better than a nearly empty reserve.
 constexpr std::array<int, 11> kWallReserveValue = {
-    0, 96, 180, 252, 312, 360, 398, 426, 450, 470, 486,
+    0, 45, 84, 120, 150, 175, 198, 218, 236, 252, 266,
 };
 
 constexpr std::array<int, 4> kRowDirections = {-1, 1, 0, 0};
@@ -783,6 +783,7 @@ class Search {
         alpha = completed_.score - 175;
         beta = completed_.score + 175;
       }
+      root_best_move_ = kNoMove;
       int score =
           Negamax(&initial_, root_paths, depth, alpha, beta, 0, 0);
       if (timed_out_) break;
@@ -1080,7 +1081,10 @@ class Search {
     OrderMoves(*position, &moves,
                has_exact_transposition ? cached->best_move : kNoMove,
                paths, ply);
-    if (moves.count == 0) return StaticEvaluation(*position, paths);
+    if (moves.count == 0) {
+      if (ply == 0) root_best_move_ = kNoMove;
+      return StaticEvaluation(*position, paths);
+    }
 
     int best_score = -kInfinity;
     uint16_t best_move = kNoMove;
@@ -1176,11 +1180,25 @@ class Search {
     if (can_use_transposition) {
       StoreEntry(*position, depth, best_score, bound, best_move, ply);
     }
+    if (ply == 0) root_best_move_ = best_move;
     return best_score;
   }
 
   void ExtractPrincipalVariation(int depth) {
     completed_.pv_length = 0;
+    if (root_count_ > 1) {
+      if (root_best_move_ == kNoMove) return;
+      completed_.pv[completed_.pv_length++] = root_best_move_;
+      Position position = ApplyMove(initial_, root_best_move_);
+      for (int index = 1; index < depth && index < kMaximumPvLength; ++index) {
+        const TranspositionEntry* entry = FindEntry(position);
+        if (entry == nullptr || entry->best_move == kNoMove) break;
+        completed_.pv[completed_.pv_length++] = entry->best_move;
+        position = ApplyMove(position, entry->best_move);
+        if (Winner(position) != -1) break;
+      }
+      return;
+    }
     Position position = initial_;
     for (int index = 0; index < depth && index < kMaximumPvLength; ++index) {
       const TranspositionEntry* entry = FindEntry(position);
@@ -1202,6 +1220,7 @@ class Search {
   Clock::time_point last_report_;
   uint64_t nodes_ = 0;
   uint64_t transposition_hits_ = 0;
+  uint16_t root_best_move_ = kNoMove;
   std::array<std::array<int, kMoveHistorySize>, 2> history_{};
   std::array<std::array<uint16_t, 2>, kMaximumSearchPly> killers_{};
   bool timed_out_ = false;

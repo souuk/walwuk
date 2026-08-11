@@ -47,7 +47,7 @@ const SIZE = 9;
 const INF = 1_000_000;
 const WIN = 100_000;
 const WALL_RESERVE_VALUE = [
-  0, 96, 180, 252, 312, 360, 398, 426, 450, 470, 486,
+  0, 45, 84, 120, 150, 175, 198, 218, 236, 252, 266,
 ] as const;
 
 function wallReserveValue(walls: number): number {
