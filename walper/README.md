@@ -41,7 +41,7 @@ The panel includes manual side, turn, and reserve overrides in case the website 
 
 ## Analysis
 
-Wallz `p2` maps to walwuk's upward-moving player zero, while Wallz `p1` maps to downward-moving player one. The extension packages the same single-threaded WebAssembly engine used by the walwuk site. Every legal wall is considered at every visited search node.
+Wallz `p2` maps to walwuk's upward-moving player zero, while Wallz `p1` maps to downward-moving player one. The extension divides the exhaustive root moves across as many as twelve isolated WebAssembly workers. Each worker has its own four-entry clustered transposition table with exact position verification, avoiding shared-memory races while retaining deeper and newer results more effectively. If the pool cannot start, walper automatically falls back to one worker. Every legal wall is considered at every visited search node.
 
 Analysis has no thinking-time cutoff and continually deepens toward 15 ply. The panel always shows the best move from the latest fully completed depth, who that score favors, the current depth and speed, and the number of nodes searched for this position. Reaching 15 ply may take a very long time and still does not prove that the complete game is solved.
 

@@ -16,6 +16,63 @@
   let currentState = null;
   let currentSignature = "";
   let lastRequestedSignature = "";
+  let contextInvalidated = false;
+  let observer = null;
+
+  function invalidExtensionContext(error) {
+    return !chrome.runtime?.id ||
+      /extension context invalidated/i.test(error instanceof Error ? error.message : String(error));
+  }
+
+  function showReloadRequired() {
+    if (contextInvalidated) return;
+    contextInvalidated = true;
+    window.clearTimeout(scanTimer);
+    observer?.disconnect();
+    clearSuggestion();
+    setField("status", "extension updated");
+    setField("best", "reload this page");
+    setField("winning", "—");
+    setField("nodes", "0");
+    setField("depth", "—");
+    setField("speed", "—");
+  }
+
+  function sendRuntimeMessage(message) {
+    if (!chrome.runtime?.id) {
+      showReloadRequired();
+      return Promise.resolve(null);
+    }
+    try {
+      return chrome.runtime.sendMessage(message).catch((error) => {
+        if (invalidExtensionContext(error)) {
+          showReloadRequired();
+          return null;
+        }
+        throw error;
+      });
+    } catch (error) {
+      if (invalidExtensionContext(error)) {
+        showReloadRequired();
+        return Promise.resolve(null);
+      }
+      return Promise.reject(error);
+    }
+  }
+
+  function saveSettings() {
+    if (!chrome.runtime?.id) {
+      showReloadRequired();
+      return;
+    }
+    try {
+      chrome.storage.local.set({ walperSettings: settings }).catch((error) => {
+        if (invalidExtensionContext(error)) showReloadRequired();
+      });
+    } catch (error) {
+      if (invalidExtensionContext(error)) showReloadRequired();
+    }
+  }
 
   function numberAttribute(element, name) {
     return Number.parseFloat(element.getAttribute(name) ?? "NaN");
@@ -213,7 +270,7 @@
     root.querySelector('[data-action="collapse"]').addEventListener("click", () => {
       settings.expanded = !settings.expanded;
       applyExpandedState();
-      chrome.storage.local.set({ walperSettings: settings });
+      saveSettings();
     });
     root.querySelector('[data-action="rescan"]').addEventListener("click", () => {
       lastRequestedSignature = "";
@@ -225,7 +282,7 @@
         settings[key] = input.type === "checkbox"
           ? input.checked
           : input.value;
-        chrome.storage.local.set({ walperSettings: settings });
+        saveSettings();
         lastRequestedSignature = "";
         scheduleScan(0);
       });
@@ -276,7 +333,7 @@
     clearSuggestion();
     resetAnalysisFields(status);
     if (signature) {
-      chrome.runtime.sendMessage({
+      sendRuntimeMessage({
         type: "walper-cancel",
         signature,
       }).catch(() => undefined);
@@ -364,7 +421,7 @@
     setField("nodes", "0");
     setField("depth", "—");
     setField("speed", "—");
-    chrome.runtime.sendMessage({
+    sendRuntimeMessage({
       type: "walper-analyze",
       state,
       signature,
@@ -441,7 +498,7 @@
       settings.expanded = !settings.expanded;
       createOverlay();
       applyExpandedState();
-      chrome.storage.local.set({ walperSettings: settings });
+      saveSettings();
     } else if (message?.type === "walper-progress" || message?.type === "walper-done") {
       displayAnalysis(message.result, message.signature);
     } else if (message?.type === "walper-error" && message.signature === currentSignature) {
@@ -451,15 +508,21 @@
     }
   });
 
-  chrome.storage.local.get("walperSettings").then(({ walperSettings }) => {
-    settings = { ...DEFAULT_SETTINGS, ...(walperSettings ?? {}) };
-    createOverlay();
-    syncSettingsControls();
-    applyExpandedState();
-    scheduleScan(0);
-  });
+  try {
+    chrome.storage.local.get("walperSettings").then(({ walperSettings }) => {
+      settings = { ...DEFAULT_SETTINGS, ...(walperSettings ?? {}) };
+      createOverlay();
+      syncSettingsControls();
+      applyExpandedState();
+      scheduleScan(0);
+    }).catch((error) => {
+      if (invalidExtensionContext(error)) showReloadRequired();
+    });
+  } catch (error) {
+    if (invalidExtensionContext(error)) showReloadRequired();
+  }
 
-  const observer = new MutationObserver((mutations) => {
+  observer = new MutationObserver((mutations) => {
     if (mutations.every(walperOwnedMutation)) return;
     if (mutations.some(mutationChangesPosition)) {
       scheduleScan(0);

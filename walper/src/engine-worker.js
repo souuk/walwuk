@@ -1,84 +1,150 @@
-import createWalwukEngine from "./engine/walwuk-engine.mjs";
+const MAX_ENGINE_WORKERS = 12;
 
-let enginePromise = null;
-
-function loadEngine() {
-  enginePromise ??= createWalwukEngine({
-    locateFile: (path) => new URL(`./engine/${path}`, import.meta.url).href,
-  });
-  return enginePromise;
+function availableWorkerCount() {
+  const logicalProcessors = navigator.hardwareConcurrency || 2;
+  return Math.max(1, Math.min(MAX_ENGINE_WORKERS, logicalProcessors - 1 || 1));
 }
 
-function splitMask(walls, orientation) {
-  let low = 0;
-  let high = 0;
-  for (const wall of walls) {
-    if (wall.o !== orientation) continue;
-    const id = wall.r * 8 + wall.c;
-    const bit = 1 << (id & 31);
-    if (id < 32) low = (low | bit) >>> 0;
-    else high = (high | bit) >>> 0;
+function moveRank(move) {
+  if (!move) return Number.MAX_SAFE_INTEGER;
+  if (move.kind === "pawn") return move.to.r * 9 + move.to.c;
+  return 0x8000 |
+    (move.wall.o === "v" ? 0x4000 : 0) |
+    (move.wall.r * 8 + move.wall.c);
+}
+
+function chooseBest(results) {
+  let best = null;
+  for (const result of results) {
+    if (!result?.bestMove) continue;
+    if (
+      !best ||
+      result.score > best.score ||
+      (result.score === best.score &&
+        moveRank(result.bestMove) < moveRank(best.bestMove))
+    ) {
+      best = result;
+    }
   }
-  return { low, high };
+  return best;
 }
 
-function packPosition(state) {
-  const horizontal = splitMask(state.walls, "h");
-  const vertical = splitMask(state.walls, "v");
+function aggregate(states, depth, allDone) {
+  const completed = states.map((state) => state.depths.get(depth));
+  if (completed.some((result) => !result)) return null;
+  const best = chooseBest(completed) || completed[0];
+  const live = states.map((state) => state.latest || state.depths.get(depth));
+  const nodes = live.reduce((total, result) => total + (result?.nodes || 0), 0);
+  const ttHits = live.reduce((total, result) => total + (result?.ttHits || 0), 0);
+  const timeMs = Math.max(...live.map((result) => result?.timeMs || 0), 1);
   return {
-    pawnZero: state.pawns[0].r * 9 + state.pawns[0].c,
-    pawnOne: state.pawns[1].r * 9 + state.pawns[1].c,
-    wallsZero: state.wallsLeft[0],
-    wallsOne: state.wallsLeft[1],
-    turn: state.turn,
-    horizontalLow: horizontal.low,
-    horizontalHigh: horizontal.high,
-    verticalLow: vertical.low,
-    verticalHigh: vertical.high,
+    ...best,
+    depth,
+    nodes,
+    nps: Math.round(nodes * 1000 / timeMs),
+    timeMs,
+    ttHits,
+    stopReason: allDone ? "depth" : best.stopReason,
+    backend: states.length === 1 ? "wasm" : `wasm-pool-${states.length}`,
   };
 }
 
-self.onmessage = async ({ data }) => {
+self.onmessage = ({ data }) => {
   if (data?.type !== "start") return;
-  const { requestId, signature, state } = data;
-  try {
-    const engine = await loadEngine();
-    const position = packPosition(state);
-    globalThis.__walwukProgress = (json) => {
-      self.postMessage({
-        type: "progress",
-        requestId,
-        signature,
-        result: JSON.parse(json),
+  const { requestId, signature } = data;
+  let fallbackStarted = false;
+  let pool = [];
+  let poolGeneration = 0;
+  let lastDepth = -1;
+  let lastProgressAt = 0;
+
+  const terminatePool = () => {
+    for (const state of pool) state.worker.terminate();
+    pool = [];
+  };
+
+  const startPool = (workerCount) => {
+    terminatePool();
+    const generation = ++poolGeneration;
+    lastDepth = -1;
+    lastProgressAt = 0;
+    pool = Array.from({ length: workerCount }, (_, workerIndex) => {
+      const worker = new Worker(new URL("./search-worker.js", import.meta.url), {
+        type: "module",
       });
-    };
-    engine._walwuk_analyze(
-      position.pawnZero,
-      position.pawnOne,
-      position.wallsZero,
-      position.wallsOne,
-      position.turn,
-      position.horizontalLow,
-      position.horizontalHigh,
-      position.verticalLow,
-      position.verticalHigh,
-      15,
-      -1,
-    );
-    self.postMessage({
-      type: "done",
-      requestId,
-      signature,
-      result: JSON.parse(engine.UTF8ToString(engine._walwuk_result())),
+      const state = {
+        worker,
+        latest: null,
+        depths: new Map(),
+        done: false,
+      };
+      worker.onmessage = ({ data: workerMessage }) => {
+        if (generation !== poolGeneration) return;
+        if (workerMessage?.type === "error") {
+          if (workerCount > 1 && !fallbackStarted) {
+            fallbackStarted = true;
+            startPool(1);
+            return;
+          }
+          self.postMessage({
+            type: "error",
+            requestId,
+            signature,
+            error: workerMessage.error || "engine worker failed",
+          });
+          terminatePool();
+          return;
+        }
+        if (!workerMessage?.result) return;
+        state.latest = workerMessage.result;
+        state.depths.set(workerMessage.result.depth, workerMessage.result);
+        state.done = workerMessage.type === "done";
+
+        const commonDepth = Math.min(...pool.map((item) => item.latest?.depth ?? -1));
+        if (commonDepth < 0) return;
+        const allDone = pool.every((item) => item.done);
+        const now = performance.now();
+        const advanced = commonDepth > lastDepth;
+        if (!allDone && !advanced && now - lastProgressAt < 1000) return;
+        const result = aggregate(pool, commonDepth, allDone);
+        if (!result) return;
+        lastDepth = Math.max(lastDepth, commonDepth);
+        lastProgressAt = now;
+        self.postMessage({
+          type: allDone ? "done" : "progress",
+          requestId,
+          signature,
+          result,
+        });
+        if (allDone) terminatePool();
+      };
+      worker.onerror = (event) => {
+        worker.onmessage({
+          data: {
+            type: "error",
+            error: event.message || "engine worker failed",
+          },
+        });
+      };
+      worker.postMessage({
+        type: "start",
+        state: data.state,
+        workerIndex,
+        workerCount,
+      });
+      return state;
     });
+  };
+
+  try {
+    startPool(availableWorkerCount());
   } catch (error) {
     self.postMessage({
       type: "error",
       requestId,
       signature,
-      error: error instanceof Error ? error.message : "engine failed",
+      error: error instanceof Error ? error.message : "engine pool failed",
     });
-  } finally {
-    delete globalThis.__walwukProgress;
+    terminatePool();
   }
 };

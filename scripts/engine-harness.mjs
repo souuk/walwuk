@@ -135,6 +135,49 @@ export function nativeAnalyze(state, maxDepth, timeMs = -1) {
   return JSON.parse(nativeEngine.UTF8ToString(nativeEngine._walwuk_result()));
 }
 
+export function nativeAnalyzeSplit(
+  state,
+  maxDepth,
+  rootIndex,
+  rootCount,
+  timeMs = -1,
+) {
+  nativeEngine._walwuk_analyze_split(
+    ...packPosition(state),
+    maxDepth,
+    timeMs,
+    rootIndex,
+    rootCount,
+  );
+  return JSON.parse(nativeEngine.UTF8ToString(nativeEngine._walwuk_result()));
+}
+
+export function nativeBeginSearch() {
+  nativeEngine._walwuk_begin_search();
+}
+
+export function nativeRootMoves(state) {
+  nativeEngine._walwuk_root_moves(...packPosition(state));
+  return JSON.parse(nativeEngine.UTF8ToString(nativeEngine._walwuk_result())).moves;
+}
+
+export function nativeSearchRootMove(
+  state,
+  moveCode,
+  depth,
+  alpha = -1_000_000,
+  beta = 1_000_000,
+) {
+  nativeEngine._walwuk_search_root_move(
+    ...packPosition(state),
+    moveCode,
+    depth,
+    alpha,
+    beta,
+  );
+  return JSON.parse(nativeEngine.UTF8ToString(nativeEngine._walwuk_result()));
+}
+
 export function typescriptSnapshot(state) {
   const pawnMoves = legalPawnMoves(state).map(moveKey);
   const moves = generateMoves(state).map(moveKey);

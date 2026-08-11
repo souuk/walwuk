@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -16,7 +17,8 @@ constexpr int kWin = 100'000;
 constexpr uint16_t kNoMove = 0xffff;
 constexpr uint16_t kWallMove = 0x8000;
 constexpr uint16_t kVerticalWall = 0x4000;
-constexpr std::size_t kTranspositionSize = 1U << 20;
+constexpr std::size_t kTranspositionClusterCount = 1U << 18;
+constexpr int kTranspositionClusterSize = 4;
 
 constexpr std::array<int, 4> kRowDirections = {-1, 1, 0, 0};
 constexpr std::array<int, 4> kColumnDirections = {0, 0, -1, 1};
@@ -157,6 +159,12 @@ struct TranspositionEntry {
 
 static_assert(sizeof(TranspositionEntry) == 32);
 
+struct TranspositionCluster {
+  std::array<TranspositionEntry, kTranspositionClusterSize> entries{};
+};
+
+static_assert(sizeof(TranspositionCluster) == 128);
+
 struct AnalysisResult {
   uint16_t best_move = kNoMove;
   int score = 0;
@@ -168,9 +176,11 @@ struct AnalysisResult {
   int nps = 0;
   int time_ms = 0;
   const char* stop_reason = "depth";
+  const char* score_bound = "exact";
 };
 
-std::vector<TranspositionEntry> transposition_table(kTranspositionSize);
+std::vector<TranspositionCluster> transposition_table(
+    kTranspositionClusterCount);
 uint8_t transposition_generation = 0;
 std::string exported_result;
 
@@ -201,6 +211,15 @@ int MoveSquare(uint16_t move) { return move & 0x7f; }
 
 int WallId(uint16_t move) { return move & 0x3f; }
 
+void BeginSearchGeneration() {
+  if (++transposition_generation == 0) {
+    for (TranspositionCluster& cluster : transposition_table) {
+      for (TranspositionEntry& entry : cluster.entries) entry.generation = 0;
+    }
+    transposition_generation = 1;
+  }
+}
+
 uint32_t PositionMetadata(const Position& position) {
   return static_cast<uint32_t>(position.turn) |
          (static_cast<uint32_t>(position.pawns[0]) << 1) |
@@ -221,7 +240,8 @@ std::size_t PositionIndex(const Position& position) {
   uint64_t hash = MixHash(position.horizontal_walls);
   hash ^= MixHash(position.vertical_walls + 0x9e3779b97f4a7c15ULL);
   hash ^= MixHash(PositionMetadata(position) + 0x243f6a8885a308d3ULL);
-  return static_cast<std::size_t>(hash) & (kTranspositionSize - 1);
+  return static_cast<std::size_t>(hash) &
+         (kTranspositionClusterCount - 1);
 }
 
 bool SamePosition(const TranspositionEntry& entry,
@@ -671,22 +691,24 @@ std::string ResultJson(const AnalysisResult& result) {
          << ",\"timeMs\":" << result.time_ms << ",\"ttHits\":"
          << result.transposition_hits
          << ",\"selective\":false,\"stopReason\":\""
-         << result.stop_reason << "\",\"backend\":\"wasm\"}";
+         << result.stop_reason << "\",\"bound\":\""
+         << result.score_bound << "\",\"backend\":\"wasm\"}";
   return output.str();
 }
 
 class Search {
  public:
-  Search(const Position& initial, int max_depth, double time_ms)
-      : initial_(initial), max_depth_(max_depth), time_ms_(time_ms) {
+  Search(const Position& initial, int max_depth, double time_ms,
+         int root_index = 0, int root_count = 1,
+         bool start_new_generation = true)
+      : initial_(initial),
+        max_depth_(max_depth),
+        time_ms_(time_ms),
+        root_index_(root_index),
+        root_count_(root_count) {
     started_ = Clock::now();
     last_report_ = started_;
-    if (++transposition_generation == 0) {
-      for (TranspositionEntry& entry : transposition_table) {
-        entry.generation = 0;
-      }
-      transposition_generation = 1;
-    }
+    if (start_new_generation) BeginSearchGeneration();
   }
 
   AnalysisResult Run() {
@@ -704,10 +726,12 @@ class Search {
         alpha = completed_.score - 175;
         beta = completed_.score + 175;
       }
-      int score = Negamax(&initial_, root_paths, depth, alpha, beta, 0);
+      int score =
+          Negamax(&initial_, root_paths, depth, alpha, beta, 0);
       if (timed_out_) break;
       if (score <= alpha || score >= beta) {
-        score = Negamax(&initial_, root_paths, depth, -kInfinity, kInfinity, 0);
+        score = Negamax(&initial_, root_paths, depth, -kInfinity, kInfinity,
+                        0);
         if (timed_out_) break;
       }
 
@@ -722,6 +746,76 @@ class Search {
     RefreshStatistics(&completed_);
     completed_.stop_reason =
         completed_.depth >= max_depth_ ? "depth" : "time";
+    return completed_;
+  }
+
+  AnalysisResult RunRootMove(uint16_t root_move, int depth, int alpha,
+                             int beta) {
+    const std::array<PathResult, 2> root_paths = {
+        ShortestPath(initial_, 0), ShortestPath(initial_, 1)};
+    completed_.best_move = root_move;
+    completed_.depth = depth > 0 ? depth - 1 : 0;
+    completed_.score = StaticEvaluation(initial_, root_paths);
+    completed_.pv[0] = root_move;
+    completed_.pv_length = 1;
+
+    Position root = initial_;
+    SearchMoveList moves = GenerateSearchMoves(&root, root_paths);
+    const SearchMove* selected = nullptr;
+    for (int index = 0; index < moves.count; ++index) {
+      if (moves.moves[index].move == root_move) {
+        selected = &moves.moves[index];
+        break;
+      }
+    }
+    if (selected == nullptr || Winner(initial_) != -1) {
+      completed_.best_move = kNoMove;
+      completed_.pv_length = 0;
+      RefreshStatistics(&completed_);
+      return completed_;
+    }
+
+    return RunPreparedRootMove(root_move, selected->child_paths, root_paths,
+                               depth, alpha, beta);
+  }
+
+  AnalysisResult RunPreparedRootMove(
+      uint16_t root_move, const std::array<PathResult, 2>& child_paths,
+      const std::array<PathResult, 2>& root_paths, int depth, int alpha,
+      int beta) {
+    completed_.best_move = root_move;
+    completed_.depth = depth > 0 ? depth - 1 : 0;
+    completed_.score = StaticEvaluation(initial_, root_paths);
+    completed_.pv[0] = root_move;
+    completed_.pv_length = 1;
+    if (Winner(initial_) != -1) {
+      completed_.best_move = kNoMove;
+      completed_.pv_length = 0;
+      RefreshStatistics(&completed_);
+      return completed_;
+    }
+
+    Position root = initial_;
+    const uint8_t original_pawn = root.pawns[root.turn];
+    MakeMove(&root, root_move);
+    const int score =
+        -Negamax(&root, child_paths, depth - 1, -beta, -alpha, 1);
+    UnmakeMove(&root, root_move, original_pawn);
+    completed_.score = score;
+    completed_.depth = depth;
+    completed_.score_bound = score <= alpha ? "upper"
+                             : score >= beta ? "lower"
+                                             : "exact";
+
+    Position pv_position = ApplyMove(initial_, root_move);
+    for (int index = 1; index < depth && index < 15; ++index) {
+      const TranspositionEntry* entry = FindEntry(pv_position);
+      if (entry == nullptr || entry->best_move == kNoMove) break;
+      completed_.pv[completed_.pv_length++] = entry->best_move;
+      pv_position = ApplyMove(pv_position, entry->best_move);
+      if (Winner(pv_position) != -1) break;
+    }
+    RefreshStatistics(&completed_);
     return completed_;
   }
 
@@ -762,15 +856,43 @@ class Search {
   }
 
   TranspositionEntry* FindEntry(const Position& position) {
-    TranspositionEntry& entry = transposition_table[PositionIndex(position)];
-    return SamePosition(entry, position) ? &entry : nullptr;
+    TranspositionCluster& cluster =
+        transposition_table[PositionIndex(position)];
+    TranspositionEntry* best = nullptr;
+    for (TranspositionEntry& entry : cluster.entries) {
+      if (SamePosition(entry, position) &&
+          (best == nullptr || entry.depth > best->depth)) {
+        best = &entry;
+      }
+    }
+    return best;
   }
 
   void StoreEntry(const Position& position, int depth, int score, Bound bound,
                   uint16_t best_move, int ply) {
-    TranspositionEntry& entry = transposition_table[PositionIndex(position)];
-    if (entry.generation == transposition_generation &&
-        !SamePosition(entry, position) && entry.depth > depth) {
+    TranspositionCluster& cluster =
+        transposition_table[PositionIndex(position)];
+    TranspositionEntry* replacement = &cluster.entries[0];
+    for (TranspositionEntry& candidate : cluster.entries) {
+      if (SamePosition(candidate, position)) {
+        replacement = &candidate;
+        break;
+      }
+      if (candidate.generation == 0) {
+        replacement = &candidate;
+        break;
+      }
+      const int candidate_value =
+          candidate.depth -
+          (candidate.generation == transposition_generation ? 0 : 16);
+      const int replacement_value =
+          replacement->depth -
+          (replacement->generation == transposition_generation ? 0 : 16);
+      if (candidate_value < replacement_value) replacement = &candidate;
+    }
+    TranspositionEntry& entry = *replacement;
+    if (SamePosition(entry, position) && entry.depth > depth &&
+        entry.bound == Bound::kExact) {
       return;
     }
     entry.horizontal_walls = position.horizontal_walls;
@@ -863,8 +985,14 @@ class Search {
 
     int best_score = -kInfinity;
     uint16_t best_move = kNoMove;
+    bool searched_move = false;
     for (int index = 0; index < moves.count; ++index) {
       const uint16_t move = moves.moves[index].move;
+      if (ply == 0 && root_count_ > 1 &&
+          static_cast<int>(move % root_count_) != root_index_) {
+        continue;
+      }
+      searched_move = true;
       const uint8_t original_pawn = position->pawns[position->turn];
       MakeMove(position, move);
       int score;
@@ -888,6 +1016,8 @@ class Search {
       if (score > alpha) alpha = score;
       if (alpha >= beta) break;
     }
+
+    if (!searched_move) return StaticEvaluation(*position, paths);
 
     Bound bound = Bound::kExact;
     if (best_score <= original_alpha) {
@@ -915,6 +1045,8 @@ class Search {
   Position initial_;
   int max_depth_;
   double time_ms_;
+  int root_index_;
+  int root_count_;
   Clock::time_point started_;
   Clock::time_point last_report_;
   uint64_t nodes_ = 0;
@@ -958,9 +1090,27 @@ std::string SnapshotJson(const Position& position) {
   return output.str();
 }
 
+std::string RootMovesJson(Position position) {
+  const std::array<PathResult, 2> paths = {ShortestPath(position, 0),
+                                           ShortestPath(position, 1)};
+  const SearchMoveList moves = GenerateSearchMoves(&position, paths);
+  std::ostringstream output;
+  output << "{\"moves\":[";
+  for (int index = 0; index < moves.count; ++index) {
+    if (index != 0) output << ',';
+    output << moves.moves[index].move;
+  }
+  output << "]}";
+  return output.str();
+}
+
 }  // namespace walwuk
 
 extern "C" {
+
+EMSCRIPTEN_KEEPALIVE void walwuk_begin_search() {
+  walwuk::BeginSearchGeneration();
+}
 
 EMSCRIPTEN_KEEPALIVE void walwuk_analyze(
     int pawn_zero, int pawn_one, int walls_zero, int walls_one, int turn,
@@ -971,6 +1121,45 @@ EMSCRIPTEN_KEEPALIVE void walwuk_analyze(
       horizontal_high, vertical_low, vertical_high);
   walwuk::Search search(position, max_depth, time_ms);
   walwuk::exported_result = walwuk::ResultJson(search.Run());
+}
+
+EMSCRIPTEN_KEEPALIVE void walwuk_analyze_split(
+    int pawn_zero, int pawn_one, int walls_zero, int walls_one, int turn,
+    uint32_t horizontal_low, uint32_t horizontal_high, uint32_t vertical_low,
+    uint32_t vertical_high, int max_depth, double time_ms, int root_index,
+    int root_count) {
+  const walwuk::Position position = walwuk::BuildPosition(
+      pawn_zero, pawn_one, walls_zero, walls_one, turn, horizontal_low,
+      horizontal_high, vertical_low, vertical_high);
+  const int safe_root_count = root_count > 0 ? root_count : 1;
+  const int safe_root_index =
+      root_index >= 0 && root_index < safe_root_count ? root_index : 0;
+  walwuk::Search search(position, max_depth, time_ms, safe_root_index,
+                        safe_root_count);
+  walwuk::exported_result = walwuk::ResultJson(search.Run());
+}
+
+EMSCRIPTEN_KEEPALIVE void walwuk_root_moves(
+    int pawn_zero, int pawn_one, int walls_zero, int walls_one, int turn,
+    uint32_t horizontal_low, uint32_t horizontal_high, uint32_t vertical_low,
+    uint32_t vertical_high) {
+  walwuk::Position position = walwuk::BuildPosition(
+      pawn_zero, pawn_one, walls_zero, walls_one, turn, horizontal_low,
+      horizontal_high, vertical_low, vertical_high);
+  walwuk::exported_result = walwuk::RootMovesJson(position);
+}
+
+EMSCRIPTEN_KEEPALIVE void walwuk_search_root_move(
+    int pawn_zero, int pawn_one, int walls_zero, int walls_one, int turn,
+    uint32_t horizontal_low, uint32_t horizontal_high, uint32_t vertical_low,
+    uint32_t vertical_high, uint32_t root_move, int depth, int alpha,
+    int beta) {
+  const walwuk::Position position = walwuk::BuildPosition(
+      pawn_zero, pawn_one, walls_zero, walls_one, turn, horizontal_low,
+      horizontal_high, vertical_low, vertical_high);
+  walwuk::Search search(position, depth, -1, 0, 1, false);
+  walwuk::exported_result = walwuk::ResultJson(search.RunRootMove(
+      static_cast<uint16_t>(root_move), depth, alpha, beta));
 }
 
 EMSCRIPTEN_KEEPALIVE void walwuk_snapshot(

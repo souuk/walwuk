@@ -6,6 +6,10 @@ import {
   formatMove,
   generateRandomPositions,
   nativeAnalyze,
+  nativeAnalyzeSplit,
+  nativeBeginSearch,
+  nativeRootMoves,
+  nativeSearchRootMove,
   nativeSnapshot,
   typescriptAnalyze,
   typescriptSnapshot,
@@ -42,6 +46,42 @@ const finishedState = {
 const finishedResult = nativeAnalyze(finishedState, 4);
 assert.equal(finishedResult.bestMove, null, "finished position must not return a best move");
 assert.deepEqual(finishedResult.pv, [], "finished position must not return a principal variation");
+
+for (const fixture of fixtures.slice(0, 3)) {
+  for (let depth = 1; depth <= maximumDepth; ++depth) {
+    const fullResult = nativeAnalyze(fixture.state, depth);
+    const splitResults = Array.from({ length: 4 }, (_, rootIndex) =>
+      nativeAnalyzeSplit(fixture.state, depth, rootIndex, 4),
+    ).filter((result) => result.bestMove !== null);
+    assert.ok(splitResults.length > 0, `${fixture.name}: split search found no move`);
+    const splitScore = Math.max(...splitResults.map((result) => result.score));
+    assert.equal(
+      splitScore,
+      fullResult.score,
+      `${fixture.name}: split search score differs at depth ${depth}`,
+    );
+  }
+}
+
+for (const fixture of fixtures.slice(0, 3)) {
+  for (let depth = 1; depth <= maximumDepth; ++depth) {
+    nativeBeginSearch();
+    const rootResults = nativeRootMoves(fixture.state).map((moveCode) => ({
+      moveCode,
+      result: nativeSearchRootMove(fixture.state, moveCode, depth),
+    }));
+    const rootScore = Math.max(...rootResults.map(({ result }) => result.score));
+    assert.equal(
+      rootScore,
+      nativeAnalyze(fixture.state, depth).score,
+      `${fixture.name}: fixed-root search score differs at depth ${depth}`,
+    );
+    assert.ok(
+      rootResults.every(({ result }) => result.bound === "exact"),
+      `${fixture.name}: full-window root search returned an inexact bound`,
+    );
+  }
+}
 
 for (const fixture of fixtures) {
   assert.deepEqual(

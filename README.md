@@ -91,21 +91,24 @@ Greater depth usually gives the engine more tactical foresight, but it also incr
 
 ## How the algorithm works
 
-The production search is implemented in [`engine-native/walwuk_engine.cpp`](engine-native/walwuk_engine.cpp), compiled to WebAssembly with Emscripten, and executed through [`app/engine-worker.ts`](app/engine-worker.ts). [`app/engine.ts`](app/engine.ts) contains the readable TypeScript rules, UI helpers, move explanations, and temporary reference search.
+The production search is implemented in [`engine-native/walwuk_engine.cpp`](engine-native/walwuk_engine.cpp), compiled to WebAssembly with Emscripten, and coordinated by [`app/engine-worker.ts`](app/engine-worker.ts). Individual root partitions run through [`app/search-worker.ts`](app/search-worker.ts). [`app/engine.ts`](app/engine.ts) contains the readable TypeScript rules, UI helpers, move explanations, and temporary reference search.
 
 ```text
 react interface
     ↓ position + limits
-web worker
-    ↓ one packed position
-c++ webassembly engine
-    ↓ progress about once per second
-web worker
+coordinating web worker
+    ↓ deterministic root partitions
+up to 12 search workers
+    ↓ one isolated c++ webassembly engine each
+coordinating web worker
+    ↓ latest depth completed by every partition
     ↓ progress / final result
 react interface
 ```
 
-JavaScript crosses into WebAssembly only when a search starts, when progress is reported, and when the final result is returned. Move generation, pathfinding, evaluation, recursion, pruning, and caching stay inside native code during a search.
+The pool uses at most one fewer worker than the browser's reported logical-processor count, capped at twelve. Every legal root move belongs to exactly one deterministic partition. The coordinator accepts a depth only after every partition has completed it, then chooses the highest-scoring result with deterministic tie-breaking and combines node, speed, time, and cache-hit statistics. This parallelism changes throughput, not search coverage.
+
+JavaScript crosses into each WebAssembly instance only when a search starts, when progress is reported, and when the final result is returned. Move generation, pathfinding, evaluation, recursion, pruning, and caching stay inside native code during a search.
 
 At a high level, every analysis follows this pipeline:
 
@@ -332,7 +335,7 @@ The narrow probe is an exact alpha-beta optimization, not selective pruning: a p
 
 ### 10. Caching repeated positions
 
-Different move orders can lead to the same position. The C++ engine stores analyzed positions in a fixed-size, contiguous transposition table. Each entry contains both wall masks, packed pawn/reserve/turn metadata, the searched depth, score bound, and best move.
+Different move orders can lead to the same position. Each C++ worker stores analyzed positions in a fixed-size, contiguous transposition table organized into four-entry clusters. Each entry contains both wall masks, packed pawn/reserve/turn metadata, the searched depth, score bound, generation, and best move. A cluster retains several positions with the same table index and replaces empty, older, or shallower entries first.
 
 The readable TypeScript reference represents the same identity with a map:
 
@@ -348,7 +351,7 @@ return `${state.turn}|${state.pawns[0].r}${state.pawns[0].c}|` +
   `${state.wallsLeft.join(",")}|${walls}`;
 ```
 
-The native table hashes that identity to a slot but verifies the complete packed identity before using an entry. A collision can therefore replace or miss a cached result, but cannot return another position's score. A result is reused only when it was searched deeply enough:
+The native table hashes that identity to a cluster but verifies the complete packed identity before using an entry. A collision can therefore replace or miss a cached result, but cannot return another position's score. A result is reused only when it was searched deeply enough:
 
 ```ts
     if (cached && cached.depth === depth) {
@@ -441,7 +444,7 @@ self.onmessage = (event) => {
 };
 ```
 
-The production worker loads the WebAssembly module and forwards the same messages. The UI starts a fresh analysis whenever the position, engine toggle, time limit, or depth changes. A completed worker and its verified transposition table stay alive for the next move; an active worker is terminated when its position becomes obsolete. The worker is also terminated when the engine is turned off or the game ends. If WebAssembly cannot initialize after one retry, the worker reports the fallback and runs the TypeScript engine instead.
+The production coordinator starts a pool of isolated WebAssembly workers and forwards the aggregated messages. The UI starts a fresh analysis whenever the position, engine toggle, time limit, or depth changes. An obsolete pool is terminated immediately, as is the active pool when the engine is turned off or the game ends. If the full pool cannot initialize, walwuk retries with one WebAssembly worker; if that also fails, it reports the fallback and runs the TypeScript engine instead.
 
 ## Reading the analysis
 
@@ -510,8 +513,9 @@ When changing engine behavior, describe the rule or evaluation change and includ
 - Wall generation is exhaustive, but a finite search depth can still hide the eventual consequence of a legal move beyond the horizon.
 - Evaluation is handcrafted and path-based; it is not a trained NNUE engine.
 - A finite depth and time limit can cause a tactical win or loss beyond the current search horizon to be missed.
-- The native engine is single-threaded and avoids browser features that require cross-origin isolation.
-- The native transposition table is fixed at 32 MiB. It survives completed moves while the worker remains alive, but is discarded when an active search must be cancelled or the engine is turned off.
+- Each native engine instance is single-threaded, but walwuk divides root moves among as many as twelve isolated WebAssembly workers without requiring cross-origin isolation.
+- Each worker has its own fixed 32 MiB transposition table. Workers do not share cache entries or alpha-beta bounds, so the pool duplicates some work and uses considerably more memory than one worker.
+- Search workers and their caches are discarded when an analysis completes or becomes obsolete.
 
 ## License
 
