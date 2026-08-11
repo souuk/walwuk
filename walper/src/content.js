@@ -415,18 +415,24 @@
     const target = mutation.target instanceof Element ? mutation.target : null;
     if (!target || (target !== boardLayer && !boardLayer.contains(target))) return false;
     if (mutation.type === "attributes") {
-      const pawnGroup = target.closest("g");
       return ["cx", "cy", "x", "y"].includes(mutation.attributeName) &&
-        Boolean(pawnGroup?.querySelector('circle[r="20"], image[width="40"][height="40"]'));
+        target.matches('circle[r="20"], image[width="40"][height="40"]');
     }
     if (mutation.type !== "childList") return false;
     const changedNodes = [...mutation.addedNodes, ...mutation.removedNodes];
     return changedNodes.some((node) => {
       if (!(node instanceof Element) || walperOwnedNode(node)) return false;
-      return node.matches('g, circle[r="20"], circle[r="22"], image, rect') ||
-        Boolean(node.querySelector?.(
-          'circle[r="20"], circle[r="22"], image[width="40"][height="40"]',
-        ));
+      if (node.matches('circle[r="20"], circle[r="22"], image[width="40"][height="40"]')) {
+        return true;
+      }
+      if (node.matches("rect")) {
+        const width = numberAttribute(node, "width");
+        const height = numberAttribute(node, "height");
+        return (width === 132 && height === 12) || (width === 12 && height === 132);
+      }
+      return Boolean(node.querySelector?.(
+        'circle[r="20"], circle[r="22"], image[width="40"][height="40"]',
+      ));
     });
   }
 
@@ -456,8 +462,7 @@
   const observer = new MutationObserver((mutations) => {
     if (mutations.every(walperOwnedMutation)) return;
     if (mutations.some(mutationChangesPosition)) {
-      invalidateAnalysis();
-      scheduleScan(40);
+      scheduleScan(0);
       return;
     }
     scheduleScan();

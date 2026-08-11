@@ -42,3 +42,9 @@ test("the board scanner excludes its own recommendation marker", () => {
   );
   assert.match(content, /mutations\.every\(walperOwnedMutation\)/);
 });
+
+test("temporary board decorations do not restart analysis", () => {
+  assert.match(content, /width === 132 && height === 12/);
+  assert.match(content, /target\.matches\('circle\[r="20"\], image/);
+  assert.doesNotMatch(content, /node\.matches\('g, circle/);
+});
