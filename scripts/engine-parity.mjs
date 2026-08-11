@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 
 import {
+  applyMove,
   comparableResult,
+  explainMove,
   fixtures,
   formatMove,
   generateRandomPositions,
@@ -51,6 +53,40 @@ assert.deepEqual(finishedResult.pv, [], "finished position must not return a pri
 const selectiveFinishedResult = nativeAnalyzeSelective(finishedState, 4);
 assert.equal(selectiveFinishedResult.bestMove, null, "selective search must stop after a win");
 assert.equal(selectiveFinishedResult.selective, true, "selective search must identify its result mode");
+
+const wallReserveRich = {
+  pawns: [{ r: 6, c: 4 }, { r: 2, c: 4 }],
+  walls: [],
+  wallsLeft: [8, 3],
+  turn: 0,
+};
+const wallReservePoor = { ...wallReserveRich, wallsLeft: [3, 8] };
+assert.ok(
+  nativeSnapshot(wallReserveRich).evaluation > nativeSnapshot(wallReservePoor).evaluation,
+  "wall reserves should carry a meaningful long-horizon evaluation value",
+);
+
+const openingOnePly = nativeAnalyze(fixtures[0].state, 1);
+assert.deepEqual(
+  openingOnePly.bestMove,
+  { kind: "pawn", to: { r: 7, c: 4 } },
+  "an uncommitted opening should preserve walls and advance the pawn",
+);
+
+const backwardPawnState = {
+  pawns: [{ r: 6, c: 4 }, { r: 2, c: 4 }],
+  walls: [],
+  wallsLeft: [10, 0],
+  turn: 1,
+};
+const backwardPawnMove = { kind: "pawn", to: { r: 1, c: 4 } };
+const backwardPawnExplanation = explainMove(
+  backwardPawnState,
+  backwardPawnMove,
+  applyMove(backwardPawnState, backwardPawnMove),
+);
+assert.match(backwardPawnExplanation.text, /gives up 1 step/);
+assert.match(backwardPawnExplanation.text, /has no walls left/);
 
 for (const fixture of fixtures) {
   const selectiveResult = nativeAnalyzeSelective(fixture.state, 2);
@@ -123,6 +159,17 @@ for (let index = 0; index < randomPositions.length; ++index) {
     nativeSnapshot(randomPositions[index]),
     typescriptSnapshot(randomPositions[index]),
     `random position ${index}: rules snapshot differs`,
+  );
+}
+
+for (const fixture of fixtures.filter(({ name }) =>
+  ["opening", "channelled routes", "transposition rich"].includes(name))) {
+  const exhaustive = nativeAnalyze(fixture.state, 5);
+  const selective = nativeAnalyzeSelective(fixture.state, 5);
+  assert.equal(
+    selective.score,
+    exhaustive.score,
+    `${fixture.name}: plausible search evaluates differently from exhaustive at five ply`,
   );
 }
 

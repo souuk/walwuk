@@ -46,6 +46,18 @@ export interface MoveExplanation {
 const SIZE = 9;
 const INF = 1_000_000;
 const WIN = 100_000;
+const WALL_RESERVE_VALUE = [
+  0, 96, 180, 252, 312, 360, 398, 426, 450, 470, 486,
+] as const;
+
+function wallReserveValue(walls: number): number {
+  return WALL_RESERVE_VALUE[Math.max(0, Math.min(10, walls))];
+}
+
+function wallReserveCost(walls: number): number {
+  if (walls <= 0) return INF;
+  return wallReserveValue(walls) - wallReserveValue(walls - 1);
+}
 const DIRS = [
   [-1, 0],
   [1, 0],
@@ -273,7 +285,8 @@ function evaluateAbsolute(state: GameState, wallMap = createWallMap(state.walls)
   const blue = shortestPath(state, 0, wallMap).distance;
   const amber = shortestPath(state, 1, wallMap).distance;
   const pathScore = (amber - blue) * 100;
-  const wallScore = (state.wallsLeft[0] - state.wallsLeft[1]) * 13;
+  const wallScore =
+    wallReserveValue(state.wallsLeft[0]) - wallReserveValue(state.wallsLeft[1]);
   const mobilityBlue = legalPawnMoves(state, 0, wallMap).length;
   const mobilityAmber = legalPawnMoves(state, 1, wallMap).length;
   const mobility = (mobilityBlue - mobilityAmber) * 4;
@@ -329,7 +342,10 @@ export function explainMove(
   }
 
   if (move.kind === "pawn") {
-    const reserve = `${playerName} still has ${after.wallsLeft[player]} walls in reserve for a later defensive or attacking turn`;
+    const wallsLeft = after.wallsLeft[player];
+    const reserve = wallsLeft === 0
+      ? `${playerName} has no walls left, so the remaining game is a pawn race`
+      : `${playerName} still has ${wallsLeft} wall${wallsLeft === 1 ? "" : "s"} in reserve for a later defensive or attacking turn`;
     if (ownChange > 0 && opponentChange > 0) {
       return { quality, text: `${routeDetails}${optionDetails}. gains a tempo and forces ${opponentName} to reroute; ${reserve}.` };
     }
@@ -338,6 +354,12 @@ export function explainMove(
     }
     if (opponentChange > 0) {
       return { quality, text: `${routeDetails}${optionDetails}. does not shorten your route, but forces a longer reply; ${reserve}.` };
+    }
+    if (ownChange < 0) {
+      return {
+        quality,
+        text: `${routeDetails}${optionDetails}. gives up ${-ownChange} step${ownChange === -1 ? "" : "s"} without delaying ${opponentName}; ${reserve}.`,
+      };
     }
     if (ownMobilityChange > 0) {
       return { quality, text: `${routeDetails}${optionDetails}. distance is unchanged, but future choices open up; ${reserve}.` };
@@ -397,6 +419,11 @@ export function formatMove(move: Move, player?: Player): string {
   return `${player === 0 ? "Blue" : player === 1 ? "Amber" : "Pawn"} ${file}${rank}`;
 }
 
+function moveHistoryIndex(move: Move): number {
+  if (move.kind === "pawn") return move.to.r * SIZE + move.to.c;
+  return 81 + move.wall.r * 8 + move.wall.c + (move.wall.o === "v" ? 64 : 0);
+}
+
 export function analyze(
   initial: GameState,
   limits: AnalysisLimits,
@@ -409,6 +436,8 @@ export function analyze(
   let ttHits = 0;
   let lastReport = started;
   let timedOut = false;
+  const history = Array.from({ length: 2 }, () => new Int32Array(81 + 128));
+  const killers = Array.from({ length: 64 }, () => ["", ""]);
 
   const checkTime = () => {
     if ((nodes & 255) !== 0) return;
@@ -436,20 +465,31 @@ export function analyze(
     ttMove: Move | null,
     beforeUs: number,
     beforeThem: number,
+    ply: number,
   ) => {
     return moves
       .map((move) => {
         let priority = ttMove && moveKey(ttMove) === moveKey(move) ? 1_000_000 : 0;
+        const key = moveKey(move);
+        if (ply < killers.length) {
+          if (key === killers[ply][0]) priority += 150_000;
+          if (key === killers[ply][1]) priority += 100_000;
+        }
+        priority += history[state.turn][moveHistoryIndex(move)];
         const next = applyMove(state, move);
         if (winner(next) === state.turn) priority += 500_000;
         if (move.kind === "pawn") {
           const goal = state.turn === 0 ? 0 : 8;
           priority += (Math.abs(state.pawns[state.turn].r - goal) - Math.abs(move.to.r - goal)) * 90;
+          const nextWallMap = createWallMap(next.walls);
+          const afterUs = shortestPath(next, state.turn, nextWallMap).distance;
+          priority += (beforeUs - afterUs) * 160;
         } else {
           const nextWallMap = createWallMap(next.walls);
           const afterUs = shortestPath(next, state.turn, nextWallMap).distance;
           const afterThem = shortestPath(next, (1 - state.turn) as Player, nextWallMap).distance;
           priority += (afterThem - beforeThem) * 120 - (afterUs - beforeUs) * 90;
+          priority -= wallReserveCost(state.wallsLeft[state.turn]);
         }
         return { move, priority };
       })
@@ -462,6 +502,9 @@ export function analyze(
     checkTime();
     const won = winner(state);
     if (won !== null) return won === state.turn ? WIN - ply : -WIN + ply;
+    alpha = Math.max(alpha, -WIN + ply);
+    beta = Math.min(beta, WIN - ply);
+    if (alpha >= beta) return alpha;
     if (depth <= 0) {
       const wallMap = createWallMap(state.walls);
       return staticEvaluation(state, wallMap);
@@ -470,7 +513,8 @@ export function analyze(
     const key = stateKey(state);
     const cached = tt.get(key);
     const originalAlpha = alpha;
-    if (cached && cached.depth >= depth) {
+    const hasExactTransposition = cached !== undefined && cached.depth === depth;
+    if (hasExactTransposition) {
       ttHits++;
       if (cached.bound === "exact") return cached.score;
       if (cached.bound === "lower") alpha = Math.max(alpha, cached.score);
@@ -484,9 +528,10 @@ export function analyze(
     const moves = orderMoves(
       state,
       generateMoves(state, currentPath, opposingPath, wallMap),
-      cached?.best ?? null,
+      hasExactTransposition ? cached.best : null,
       currentPath.distance,
       opposingPath.distance,
+      ply,
     );
     if (!moves.length) return staticEvaluation(state, wallMap);
     let bestScore = -INF;
@@ -498,7 +543,15 @@ export function analyze(
         best = move;
       }
       alpha = Math.max(alpha, score);
-      if (alpha >= beta) break;
+      if (alpha >= beta) {
+        const index = moveHistoryIndex(move);
+        history[state.turn][index] = Math.min(32_000, history[state.turn][index] + depth * depth);
+        if (ply < killers.length && killers[ply][0] !== moveKey(move)) {
+          killers[ply][1] = killers[ply][0];
+          killers[ply][0] = moveKey(move);
+        }
+        break;
+      }
     }
     const bound: Bound = bestScore <= originalAlpha ? "upper" : bestScore >= beta ? "lower" : "exact";
     tt.set(key, { depth, score: bestScore, bound, best });
