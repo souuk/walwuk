@@ -40,13 +40,15 @@
     return ENGINE_TO_PLAYER[player] ?? "unknown";
   }
 
-  function formatMove(move) {
+  function formatMove(move, flipped = false) {
     if (!move) return "none";
     if (move.kind === "pawn") {
-      return `pawn → ${String.fromCharCode(97 + move.to.c)}${move.to.r + 1}`;
+      const rank = flipped ? move.to.r + 1 : 9 - move.to.r;
+      return `pawn → ${String.fromCharCode(97 + move.to.c)}${rank}`;
     }
+    const rank = flipped ? move.wall.r + 1 : 8 - move.wall.r;
     return `${move.wall.o === "h" ? "horizontal" : "vertical"} wall · ` +
-      `${String.fromCharCode(97 + move.wall.c)}${move.wall.r + 1}`;
+      `${String.fromCharCode(97 + move.wall.c)}${rank}`;
   }
 
   function formatEvaluation(result, state) {

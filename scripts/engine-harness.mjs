@@ -5,6 +5,7 @@ import {
   INITIAL_STATE,
   analyze,
   applyMove,
+  formatMove,
   generateMoves,
   isLegalWall,
   legalPawnMoves,
@@ -15,6 +16,8 @@ import {
 } from "../.engine-test/engine.js";
 
 const moduleUrl = new URL("../public/engine/walwuk-engine.mjs", import.meta.url);
+
+export { formatMove };
 
 export const nativeEngine = await createEngine({
   locateFile: (path) => fileURLToPath(new URL(path, moduleUrl)),

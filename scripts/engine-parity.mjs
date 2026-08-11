@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   comparableResult,
   fixtures,
+  formatMove,
   generateRandomPositions,
   nativeAnalyze,
   nativeSnapshot,
@@ -13,6 +14,17 @@ import {
 const full = process.argv.includes("--full");
 const randomPositionCount = full ? 2_000 : 250;
 const maximumDepth = full ? 3 : 2;
+
+assert.equal(
+  formatMove({ kind: "wall", wall: { r: 0, c: 0, o: "h" } }),
+  "H-a8",
+  "top wall rank should match the visible Wallz board",
+);
+assert.equal(
+  formatMove({ kind: "wall", wall: { r: 7, c: 7, o: "v" } }),
+  "V-h1",
+  "bottom wall rank should match the visible Wallz board",
+);
 
 const depthLimited = nativeAnalyze(fixtures[0].state, 1);
 assert.equal(depthLimited.stopReason, "depth", "fixed-depth search should report depth completion");

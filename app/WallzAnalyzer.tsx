@@ -350,7 +350,7 @@ export function WallzAnalyzer() {
                       className={`wall-slot ${o}`}
                       style={wallStyle(wall)}
                       onClick={() => handleWall(wall)}
-                      aria-label={`Place ${o === "h" ? "horizontal" : "vertical"} wall at ${String.fromCharCode(97 + c)}${r + 1}`}
+                      aria-label={`Place ${o === "h" ? "horizontal" : "vertical"} wall at ${String.fromCharCode(97 + c)}${8 - r}`}
                     />
                   );
                 }),

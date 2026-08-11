@@ -390,7 +390,7 @@ function stateKey(state: GameState): string {
 export function formatMove(move: Move, player?: Player): string {
   if (move.kind === "wall") {
     const file = String.fromCharCode(97 + move.wall.c);
-    return `${move.wall.o === "h" ? "H" : "V"}-${file}${move.wall.r + 1}`;
+    return `${move.wall.o === "h" ? "H" : "V"}-${file}${8 - move.wall.r}`;
   }
   const file = String.fromCharCode(97 + move.to.c);
   const rank = 9 - move.to.r;

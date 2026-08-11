@@ -40,9 +40,17 @@ test("position signatures do not depend on wall array order", () => {
 });
 
 test("formats engine moves in Wallz board coordinates", () => {
-  assert.equal(formatMove({ kind: "pawn", to: { r: 6, c: 4 } }), "pawn → e7");
+  assert.equal(formatMove({ kind: "pawn", to: { r: 6, c: 4 } }), "pawn → e3");
   assert.equal(
     formatMove({ kind: "wall", wall: { r: 3, c: 2, o: "v" } }),
+    "vertical wall · c5",
+  );
+  assert.equal(
+    formatMove({ kind: "pawn", to: { r: 6, c: 4 } }, true),
+    "pawn → e7",
+  );
+  assert.equal(
+    formatMove({ kind: "wall", wall: { r: 3, c: 2, o: "v" } }, true),
     "vertical wall · c4",
   );
 });
