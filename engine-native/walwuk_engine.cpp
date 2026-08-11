@@ -20,6 +20,16 @@ constexpr uint16_t kVerticalWall = 0x4000;
 constexpr int kMaximumPvLength = 24;
 constexpr std::size_t kTranspositionClusterCount = 1U << 18;
 constexpr int kTranspositionClusterSize = 4;
+constexpr int kMaximumSearchPly = 64;
+constexpr int kMoveHistorySize = 81 + 128;
+constexpr int kMaximumRaceExtensions = 2;
+
+// The first few remaining walls are much more valuable than the last few.
+// This prevents a short horizon from treating a stockpile of ten walls as
+// only marginally better than a nearly empty reserve.
+constexpr std::array<int, 11> kWallReserveValue = {
+    0, 96, 180, 252, 312, 360, 398, 426, 450, 470, 486,
+};
 
 constexpr std::array<int, 4> kRowDirections = {-1, 1, 0, 0};
 constexpr std::array<int, 4> kColumnDirections = {0, 0, -1, 1};
@@ -157,6 +167,7 @@ struct TranspositionEntry {
   uint8_t depth = 0;
   Bound bound = Bound::kExact;
   uint8_t generation = 0;
+  uint8_t search_mode = 0;
 };
 
 static_assert(sizeof(TranspositionEntry) == 32);
@@ -214,6 +225,20 @@ int MoveSquare(uint16_t move) { return move & 0x7f; }
 
 int WallId(uint16_t move) { return move & 0x3f; }
 
+int MoveHistoryIndex(uint16_t move) {
+  if (!IsWallMove(move)) return MoveSquare(move);
+  return 81 + WallId(move) + (IsVerticalWall(move) ? 64 : 0);
+}
+
+int WallReserveValue(int walls) {
+  return kWallReserveValue[std::clamp(walls, 0, 10)];
+}
+
+int WallReserveCost(int walls) {
+  if (walls <= 0) return kInfinity;
+  return WallReserveValue(walls) - WallReserveValue(walls - 1);
+}
+
 void BeginSearchGeneration() {
   if (++transposition_generation == 0) {
     for (TranspositionCluster& cluster : transposition_table) {
@@ -248,11 +273,12 @@ std::size_t PositionIndex(const Position& position) {
 }
 
 bool SamePosition(const TranspositionEntry& entry,
-                  const Position& position) {
+                  const Position& position, SearchMode mode) {
   return entry.generation != 0 &&
          entry.horizontal_walls == position.horizontal_walls &&
          entry.vertical_walls == position.vertical_walls &&
-         entry.metadata == PositionMetadata(position);
+         entry.metadata == PositionMetadata(position) &&
+         entry.search_mode == static_cast<uint8_t>(mode);
 }
 
 int ScoreToTable(int score, int ply) {
@@ -411,16 +437,12 @@ PathResult ShortestPath(const Position& position, int player) {
 
 MoveList LegalPawnMoves(const Position& position, int player) {
   MoveList result;
-  std::array<uint8_t, kSquareCount> seen{};
   const int own = position.pawns[player];
   const int other = position.pawns[1 - player];
   const int own_row = own / 9;
   const int own_column = own % 9;
   auto add_destination = [&](int row, int column) {
-    const int square = row * 9 + column;
-    if (seen[square]) return;
-    seen[square] = 1;
-    result.Push(PackPawnMove(square));
+    result.Push(PackPawnMove(row * 9 + column));
   };
 
   for (int direction = 0; direction < 4; ++direction) {
@@ -654,8 +676,8 @@ int StaticEvaluation(const Position& position) {
   const int periwinkle = ShortestPath(position, 0).distance;
   const int blossom = ShortestPath(position, 1).distance;
   const int path_score = (blossom - periwinkle) * 100;
-  const int wall_score =
-      (position.walls_left[0] - position.walls_left[1]) * 13;
+  const int wall_score = WallReserveValue(position.walls_left[0]) -
+                         WallReserveValue(position.walls_left[1]);
   const int mobility =
       (LegalPawnMoves(position, 0).count -
        LegalPawnMoves(position, 1).count) *
@@ -669,8 +691,8 @@ int StaticEvaluation(const Position& position,
   const int winner = Winner(position);
   if (winner != -1) return winner == position.turn ? kWin : -kWin;
   const int path_score = (paths[1].distance - paths[0].distance) * 100;
-  const int wall_score =
-      (position.walls_left[0] - position.walls_left[1]) * 13;
+  const int wall_score = WallReserveValue(position.walls_left[0]) -
+                         WallReserveValue(position.walls_left[1]);
   const int mobility =
       (LegalPawnMoves(position, 0).count -
        LegalPawnMoves(position, 1).count) *
@@ -742,6 +764,8 @@ class Search {
     last_report_ = started_;
     if (start_new_generation) BeginSearchGeneration();
     completed_.selective = mode_ == SearchMode::kSelective;
+    for (auto& player_history : history_) player_history.fill(0);
+    for (auto& ply_killers : killers_) ply_killers = {kNoMove, kNoMove};
   }
 
   AnalysisResult Run() {
@@ -760,11 +784,11 @@ class Search {
         beta = completed_.score + 175;
       }
       int score =
-          Negamax(&initial_, root_paths, depth, alpha, beta, 0);
+          Negamax(&initial_, root_paths, depth, alpha, beta, 0, 0);
       if (timed_out_) break;
       if (score <= alpha || score >= beta) {
         score = Negamax(&initial_, root_paths, depth, -kInfinity, kInfinity,
-                        0);
+                        0, 0);
         if (timed_out_) break;
       }
 
@@ -832,7 +856,7 @@ class Search {
     const uint8_t original_pawn = root.pawns[root.turn];
     MakeMove(&root, root_move);
     const int score =
-        -Negamax(&root, child_paths, depth - 1, -beta, -alpha, 1);
+        -Negamax(&root, child_paths, depth - 1, -beta, -alpha, 1, 0);
     UnmakeMove(&root, root_move, original_pawn);
     completed_.score = score;
     completed_.depth = depth;
@@ -893,7 +917,7 @@ class Search {
         transposition_table[PositionIndex(position)];
     TranspositionEntry* best = nullptr;
     for (TranspositionEntry& entry : cluster.entries) {
-      if (SamePosition(entry, position) &&
+      if (SamePosition(entry, position, mode_) &&
           (best == nullptr || entry.depth > best->depth)) {
         best = &entry;
       }
@@ -907,7 +931,7 @@ class Search {
         transposition_table[PositionIndex(position)];
     TranspositionEntry* replacement = &cluster.entries[0];
     for (TranspositionEntry& candidate : cluster.entries) {
-      if (SamePosition(candidate, position)) {
+      if (SamePosition(candidate, position, mode_)) {
         replacement = &candidate;
         break;
       }
@@ -924,7 +948,7 @@ class Search {
       if (candidate_value < replacement_value) replacement = &candidate;
     }
     TranspositionEntry& entry = *replacement;
-    if (SamePosition(entry, position) && entry.depth > depth &&
+    if (SamePosition(entry, position, mode_) && entry.depth > depth &&
         entry.bound == Bound::kExact) {
       return;
     }
@@ -936,15 +960,21 @@ class Search {
     entry.depth = static_cast<uint8_t>(depth);
     entry.bound = bound;
     entry.generation = transposition_generation;
+    entry.search_mode = static_cast<uint8_t>(mode_);
   }
 
   void OrderMoves(const Position& position, SearchMoveList* moves,
                   uint16_t transposition_move,
-                  const std::array<PathResult, 2>& paths) {
+                  const std::array<PathResult, 2>& paths, int ply) {
     std::array<int, 136> priorities{};
     for (int index = 0; index < moves->count; ++index) {
       const uint16_t move = moves->moves[index].move;
       int priority = move == transposition_move ? 1'000'000 : 0;
+      if (ply < kMaximumSearchPly) {
+        if (move == killers_[ply][0]) priority += 150'000;
+        if (move == killers_[ply][1]) priority += 100'000;
+      }
+      priority += history_[position.turn][MoveHistoryIndex(move)];
       if (!IsWallMove(move)) {
         const int destination = MoveSquare(move);
         const int destination_row = destination / 9;
@@ -960,6 +990,10 @@ class Search {
         const int after_distance = after_row > goal ? after_row - goal
                                                     : goal - after_row;
         priority += (before_distance - after_distance) * 90;
+        priority +=
+            (paths[position.turn].distance -
+             moves->moves[index].child_paths[position.turn].distance) *
+            160;
       } else {
         const int player = position.turn;
         const auto& child_paths = moves->moves[index].child_paths;
@@ -967,6 +1001,7 @@ class Search {
             (child_paths[1 - player].distance - paths[1 - player].distance) *
                 120 -
             (child_paths[player].distance - paths[player].distance) * 90;
+        priority -= WallReserveCost(position.walls_left[player]);
       }
       priorities[index] = priority;
     }
@@ -985,8 +1020,23 @@ class Search {
     }
   }
 
+  bool IsRaceCritical(const std::array<PathResult, 2>& paths) const {
+    const int shortest = std::min(paths[0].distance, paths[1].distance);
+    const int longest = std::max(paths[0].distance, paths[1].distance);
+    return shortest <= 2 || (shortest <= 3 && longest <= 4);
+  }
+
+  void RecordCutoff(int player, uint16_t move, int depth, int ply) {
+    const int bonus = depth * depth;
+    int& history = history_[player][MoveHistoryIndex(move)];
+    history = std::min(32'000, history + bonus);
+    if (ply >= kMaximumSearchPly || killers_[ply][0] == move) return;
+    killers_[ply][1] = killers_[ply][0];
+    killers_[ply][0] = move;
+  }
+
   int Negamax(Position* position, const std::array<PathResult, 2>& paths,
-              int depth, int alpha, int beta, int ply) {
+              int depth, int alpha, int beta, int ply, int extensions) {
     ++nodes_;
     CheckTime();
     if (timed_out_) return 0;
@@ -994,11 +1044,27 @@ class Search {
     if (winner != -1) {
       return winner == position->turn ? kWin - ply : -kWin + ply;
     }
+    alpha = std::max(alpha, -kWin + ply);
+    beta = std::min(beta, kWin - ply);
+    if (alpha >= beta) return alpha;
     if (depth <= 0) return StaticEvaluation(*position, paths);
 
-    TranspositionEntry* cached = FindEntry(*position);
+    // A race extension changes the remaining selective horizon. Keep those
+    // nodes out of the regular TT so an entry searched with fewer extensions
+    // can never stand in for a position that is entitled to more foresight.
+    // A split root likewise sees only a subset of legal root moves, so its
+    // score must never become a full-position cache entry.
+    const bool can_use_transposition =
+        extensions == 0 && !(ply == 0 && root_count_ > 1);
+    TranspositionEntry* cached =
+        can_use_transposition ? FindEntry(*position) : nullptr;
     const int original_alpha = alpha;
-    if (cached != nullptr && cached->depth == depth) {
+    // Reuse a score only when it was searched at the requested depth. A
+    // deeper entry remains valuable for move ordering, but returning it here
+    // would make a fixed-depth request report a score from another horizon.
+    const bool has_exact_transposition =
+        cached != nullptr && cached->depth == depth;
+    if (has_exact_transposition) {
       ++transposition_hits_;
       const int cached_score = ScoreFromTable(cached->score, ply);
       if (cached->bound == Bound::kExact) return cached_score;
@@ -1010,15 +1076,10 @@ class Search {
       if (alpha >= beta) return cached_score;
     }
 
-    if (mode_ == SearchMode::kSelective && ply > 0 && depth >= 6 &&
-        (cached == nullptr || cached->best_move == kNoMove)) {
-      --depth;
-    }
-
     SearchMoveList moves = GenerateSearchMoves(position, paths, mode_);
     OrderMoves(*position, &moves,
-               cached == nullptr ? kNoMove : cached->best_move,
-               paths);
+               has_exact_transposition ? cached->best_move : kNoMove,
+               paths, ply);
     if (moves.count == 0) return StaticEvaluation(*position, paths);
 
     int best_score = -kInfinity;
@@ -1033,7 +1094,7 @@ class Search {
         continue;
       }
       const bool transposition_move =
-          cached != nullptr && move == cached->best_move;
+          has_exact_transposition && move == cached->best_move;
       const bool immediate_win =
           !IsWallMove(move) &&
           ((position->turn == 0 && MoveSquare(move) / 9 == 0) ||
@@ -1051,12 +1112,19 @@ class Search {
       ++searched_count;
       const uint8_t original_pawn = position->pawns[position->turn];
       MakeMove(position, move);
+      int next_depth = depth - 1;
+      int next_extensions = extensions;
+      if (mode_ == SearchMode::kSelective && extensions < kMaximumRaceExtensions &&
+          IsRaceCritical(moves.moves[index].child_paths)) {
+        ++next_depth;
+        ++next_extensions;
+      }
       int score;
       if (searched_count == 1) {
-        score = -Negamax(position, moves.moves[index].child_paths, depth - 1,
-                         -beta, -alpha, ply + 1);
+        score = -Negamax(position, moves.moves[index].child_paths, next_depth,
+                         -beta, -alpha, ply + 1, next_extensions);
       } else {
-        int search_depth = depth - 1;
+        int search_depth = next_depth;
         const bool reduce =
             mode_ == SearchMode::kSelective && ply > 0 && depth >= 3 &&
             searched_count > 4 && !transposition_move && !immediate_win;
@@ -1066,18 +1134,22 @@ class Search {
           const int reduced_depth =
               search_depth > reduction ? search_depth - reduction : 0;
           score = -Negamax(position, moves.moves[index].child_paths,
-                           reduced_depth, -alpha - 1, -alpha, ply + 1);
+                           reduced_depth, -alpha - 1, -alpha, ply + 1,
+                           next_extensions);
           if (!timed_out_ && score > alpha) {
             score = -Negamax(position, moves.moves[index].child_paths,
-                             search_depth, -alpha - 1, -alpha, ply + 1);
+                             search_depth, -alpha - 1, -alpha, ply + 1,
+                             next_extensions);
           }
         } else {
           score = -Negamax(position, moves.moves[index].child_paths,
-                           search_depth, -alpha - 1, -alpha, ply + 1);
+                           search_depth, -alpha - 1, -alpha, ply + 1,
+                           next_extensions);
         }
         if (!timed_out_ && score > alpha && score < beta) {
           score = -Negamax(position, moves.moves[index].child_paths,
-                           depth - 1, -beta, -alpha, ply + 1);
+                           next_depth, -beta, -alpha, ply + 1,
+                           next_extensions);
         }
       }
       UnmakeMove(position, move, original_pawn);
@@ -1087,7 +1159,10 @@ class Search {
         best_move = move;
       }
       if (score > alpha) alpha = score;
-      if (alpha >= beta) break;
+      if (alpha >= beta) {
+        RecordCutoff(position->turn, move, depth, ply);
+        break;
+      }
     }
 
     if (!searched_move) return StaticEvaluation(*position, paths);
@@ -1098,7 +1173,9 @@ class Search {
     } else if (best_score >= beta) {
       bound = Bound::kLower;
     }
-    StoreEntry(*position, depth, best_score, bound, best_move, ply);
+    if (can_use_transposition) {
+      StoreEntry(*position, depth, best_score, bound, best_move, ply);
+    }
     return best_score;
   }
 
@@ -1125,6 +1202,8 @@ class Search {
   Clock::time_point last_report_;
   uint64_t nodes_ = 0;
   uint64_t transposition_hits_ = 0;
+  std::array<std::array<int, kMoveHistorySize>, 2> history_{};
+  std::array<std::array<uint16_t, 2>, kMaximumSearchPly> killers_{};
   bool timed_out_ = false;
   AnalysisResult completed_;
 };
