@@ -205,14 +205,14 @@ export function WallzAnalyzer() {
   const toGridCol = (c: number) => c * 2 + 1;
   const wallStyle = (wall: Wall) => {
     const r = rotated ? 7 - wall.r : wall.r;
-    const c = rotated ? 7 - wall.c : wall.c;
+    const c = rotated ? wall.c : 7 - wall.c;
     return wall.o === "h"
       ? { gridRow: `${r * 2 + 2}`, gridColumn: `${c * 2 + 1} / span 3` }
       : { gridRow: `${r * 2 + 1} / span 3`, gridColumn: `${c * 2 + 2}` };
   };
 
   const circleStyle = (square: Square) => {
-    const c = rotated ? 8 - square.c : square.c;
+    const c = rotated ? square.c : 8 - square.c;
     const r = rotated ? 8 - square.r : square.r;
     const leftPercent = ((c + 0.225) * 100) / 9;
     const topPercent = ((r + 0.225) * 100) / 9;
@@ -241,8 +241,8 @@ export function WallzAnalyzer() {
           : `${blueScore > 0 ? "periwinkle" : "blossom"} +${(Math.abs(blueScore) / 100).toFixed(2)} moves`;
 
   const displaySquare = (displayRow: number, displayColumn: number): Square => rotated
-    ? { r: 8 - displayRow, c: 8 - displayColumn }
-    : { r: displayRow, c: displayColumn };
+    ? { r: 8 - displayRow, c: displayColumn }
+    : { r: displayRow, c: 8 - displayColumn };
 
   return (
     <main className="app-shell">
