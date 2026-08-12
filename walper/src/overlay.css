@@ -93,6 +93,19 @@
   overflow-wrap: anywhere;
 }
 
+#walper-root .walper-winning-label {
+  align-self: center;
+  color: #514534;
+  font-weight: 600;
+}
+
+#walper-root .walper-winning-value {
+  color: #211b14;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
 #walper-root details {
   margin-top: 9px;
 }

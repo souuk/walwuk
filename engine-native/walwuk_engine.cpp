@@ -208,11 +208,100 @@ WallConflictMasks MakeWallConflictMasks() {
 
 const WallConflictMasks kWallConflicts = MakeWallConflictMasks();
 
+struct WallBlockedMasks {
+  std::array<Bits81, 64> up{};
+  std::array<Bits81, 64> down{};
+  std::array<Bits81, 64> left{};
+  std::array<Bits81, 64> right{};
+};
+
+WallBlockedMasks MakeWallBlockedMasks() {
+  WallBlockedMasks masks;
+  for (int row = 0; row < 8; ++row) {
+    for (int column = 0; column < 8; ++column) {
+      const int id = row * 8 + column;
+      for (int offset = 0; offset < 2; ++offset) {
+        const int upper = row * 9 + column + offset;
+        masks.down[id].Set(upper);
+        masks.up[id].Set(upper + 9);
+        const int left = (row + offset) * 9 + column;
+        masks.right[id].Set(left);
+        masks.left[id].Set(left + 1);
+      }
+    }
+  }
+  return masks;
+}
+
+const WallBlockedMasks kWallBlocked = MakeWallBlockedMasks();
+
+constexpr uint64_t MakeWallColumnMask(int column) {
+  uint64_t mask = 0;
+  for (int row = 0; row < 8; ++row) {
+    mask |= uint64_t{1} << (row * 8 + column);
+  }
+  return mask;
+}
+
+constexpr uint64_t kWallColumnZero = MakeWallColumnMask(0);
+constexpr uint64_t kWallColumnSeven = MakeWallColumnMask(7);
+
+constexpr std::array<uint64_t, kSquareCount> MakeNearPawnWallMasks() {
+  std::array<uint64_t, kSquareCount> masks{};
+  for (int square = 0; square < kSquareCount; ++square) {
+    const int pawn_row = square / 9;
+    const int pawn_column = square % 9;
+    for (int row = std::max(0, pawn_row - 1);
+         row <= std::min(7, pawn_row + 1); ++row) {
+      for (int column = std::max(0, pawn_column - 1);
+           column <= std::min(7, pawn_column + 1); ++column) {
+        masks[square] |= uint64_t{1} << (row * 8 + column);
+      }
+    }
+  }
+  return masks;
+}
+
+constexpr auto kNearPawnWallMasks = MakeNearPawnWallMasks();
+
+uint64_t AvailableWallMask(const Position& position, bool vertical) {
+  const uint64_t own =
+      vertical ? position.vertical_walls : position.horizontal_walls;
+  const uint64_t crossing =
+      vertical ? position.horizontal_walls : position.vertical_walls;
+  uint64_t forbidden = own | crossing;
+  if (vertical) {
+    forbidden |= own << 8;
+    forbidden |= own >> 8;
+  } else {
+    forbidden |= (own & ~kWallColumnSeven) << 1;
+    forbidden |= (own & ~kWallColumnZero) >> 1;
+  }
+  return ~forbidden;
+}
+
 struct PathResult {
   int distance = 99;
   uint64_t blocking_horizontal = 0;
   uint64_t blocking_vertical = 0;
 };
+
+constexpr std::size_t kPathCacheSize = 1U << 15;
+
+struct PathCacheEntry {
+  uint64_t horizontal_walls = 0;
+  uint64_t vertical_walls = 0;
+  PathResult result;
+  uint8_t pawn = 0;
+  uint8_t player = 0;
+  bool valid = false;
+};
+
+std::array<PathCacheEntry, kPathCacheSize> path_cache;
+// Empty openings have cheap, low-collision BFS traversals where hashing costs
+// more than recomputation. Each worker owns one Wasm instance and one search,
+// so root-phase specialization is thread-safe and remains exact.
+bool path_cache_enabled = false;
 
 struct MoveList {
   int count = 0;
@@ -229,9 +318,12 @@ struct SearchMove {
 struct SearchMoveList {
   int count = 0;
   std::array<SearchMove, 136> moves{};
+  std::array<uint16_t, 136> order{};
 
   void Push(uint16_t move, const std::array<PathResult, 2>& child_paths) {
-    moves[count++] = {move, child_paths};
+    moves[count] = {move, child_paths};
+    order[count] = static_cast<uint16_t>(count);
+    ++count;
   }
 };
 
@@ -351,12 +443,12 @@ std::size_t PositionIndex(const Position& position) {
 }
 
 bool SamePosition(const TranspositionEntry& entry,
-                  const Position& position, SearchMode mode) {
+                  const Position& position, uint32_t metadata,
+                  uint8_t search_mode) {
   return entry.generation != 0 &&
          entry.horizontal_walls == position.horizontal_walls &&
          entry.vertical_walls == position.vertical_walls &&
-         entry.metadata == PositionMetadata(position) &&
-         entry.search_mode == static_cast<uint8_t>(mode);
+         entry.metadata == metadata && entry.search_mode == search_mode;
 }
 
 int ScoreToTable(int score, int ply) {
@@ -377,19 +469,15 @@ void AddWallUnchecked(Position* position, int row, int column,
   position->key ^= kZobrist.walls[vertical ? 1 : 0][wall_id];
   if (vertical) {
     position->vertical_walls |= uint64_t{1} << wall_id;
-    for (int blocked_row = row; blocked_row <= row + 1; ++blocked_row) {
-      const int left = blocked_row * 9 + column;
-      position->blocked_right.Set(left);
-      position->blocked_left.Set(left + 1);
-    }
+    position->blocked_right =
+        position->blocked_right | kWallBlocked.right[wall_id];
+    position->blocked_left =
+        position->blocked_left | kWallBlocked.left[wall_id];
   } else {
     position->horizontal_walls |= uint64_t{1} << wall_id;
-    for (int blocked_column = column; blocked_column <= column + 1;
-         ++blocked_column) {
-      const int upper = row * 9 + blocked_column;
-      position->blocked_down.Set(upper);
-      position->blocked_up.Set(upper + 9);
-    }
+    position->blocked_down =
+        position->blocked_down | kWallBlocked.down[wall_id];
+    position->blocked_up = position->blocked_up | kWallBlocked.up[wall_id];
   }
 }
 
@@ -399,19 +487,16 @@ void RemoveWallUnchecked(Position* position, int row, int column,
   position->key ^= kZobrist.walls[vertical ? 1 : 0][wall_id];
   if (vertical) {
     position->vertical_walls &= ~(uint64_t{1} << wall_id);
-    for (int blocked_row = row; blocked_row <= row + 1; ++blocked_row) {
-      const int left = blocked_row * 9 + column;
-      position->blocked_right.Clear(left);
-      position->blocked_left.Clear(left + 1);
-    }
+    position->blocked_right =
+        Without(position->blocked_right, kWallBlocked.right[wall_id]);
+    position->blocked_left =
+        Without(position->blocked_left, kWallBlocked.left[wall_id]);
   } else {
     position->horizontal_walls &= ~(uint64_t{1} << wall_id);
-    for (int blocked_column = column; blocked_column <= column + 1;
-         ++blocked_column) {
-      const int upper = row * 9 + blocked_column;
-      position->blocked_down.Clear(upper);
-      position->blocked_up.Clear(upper + 9);
-    }
+    position->blocked_down =
+        Without(position->blocked_down, kWallBlocked.down[wall_id]);
+    position->blocked_up =
+        Without(position->blocked_up, kWallBlocked.up[wall_id]);
   }
 }
 
@@ -488,14 +573,16 @@ void AddBlockingWallCandidates(int first, int second, PathResult* result) {
   }
 }
 
-PathResult ShortestPath(const Position& position, int player,
-                        bool all_shortest_paths = false) {
+PathResult ComputeShortestPath(const Position& position, int player,
+                               bool all_shortest_paths) {
   const Bits81 target = player == 0 ? kTopRow : kBottomRow;
-  std::array<Bits81, kSquareCount> layers{};
+  std::array<uint64_t, kSquareCount> layer_low;
+  std::array<uint32_t, kSquareCount> layer_high;
   Bits81 frontier = SquareBit(position.pawns[player]);
   Bits81 visited = frontier;
   for (int distance = 0; distance < kSquareCount; ++distance) {
-    layers[distance] = frontier;
+    layer_low[distance] = frontier.low;
+    layer_high[distance] = frontier.high;
     const Bits81 reached = frontier & target;
     if (Any(reached)) {
       PathResult result;
@@ -503,8 +590,10 @@ PathResult ShortestPath(const Position& position, int player,
       if (!all_shortest_paths) {
         int current = FirstSquare(reached);
         for (int layer = distance; layer > 0; --layer) {
+          const Bits81 previous = {layer_low[layer - 1],
+                                   layer_high[layer - 1]};
           const Bits81 predecessors =
-              Expand(position, SquareBit(current)) & layers[layer - 1];
+              Expand(position, SquareBit(current)) & previous;
           const int predecessor = FirstSquare(predecessors);
           AddBlockingWallCandidates(predecessor, current, &result);
           current = predecessor;
@@ -513,7 +602,9 @@ PathResult ShortestPath(const Position& position, int player,
       }
       Bits81 next_layer = reached;
       for (int layer = distance; layer > 0; --layer) {
-        Bits81 predecessors = Expand(position, next_layer) & layers[layer - 1];
+        const Bits81 previous = {layer_low[layer - 1],
+                                 layer_high[layer - 1]};
+        Bits81 predecessors = Expand(position, next_layer) & previous;
         Bits81 remaining_predecessors = predecessors;
         while (Any(remaining_predecessors)) {
           const int predecessor = FirstSquare(remaining_predecessors);
@@ -534,6 +625,44 @@ PathResult ShortestPath(const Position& position, int player,
     visited = visited | frontier;
   }
   return {};
+}
+
+std::size_t PathCacheIndex(const Position& position, int player) {
+  uint64_t key = position.horizontal_walls * 0x9e3779b97f4a7c15ULL;
+  key ^= position.vertical_walls * 0xbf58476d1ce4e5b9ULL;
+  key ^= static_cast<uint64_t>(position.pawns[player] + player * 81) *
+         0x94d049bb133111ebULL;
+  key ^= key >> 29;
+  return static_cast<std::size_t>(key) & (kPathCacheSize - 1);
+}
+
+PathResult ShortestPath(const Position& position, int player,
+                        bool all_shortest_paths = false) {
+  if (all_shortest_paths) {
+    return ComputeShortestPath(position, player, true);
+  }
+  if (!path_cache_enabled) {
+    return ComputeShortestPath(position, player, false);
+  }
+  const int wall_count = __builtin_popcountll(position.horizontal_walls) +
+                         __builtin_popcountll(position.vertical_walls);
+  if (wall_count < 4) {
+    return ComputeShortestPath(position, player, false);
+  }
+  PathCacheEntry& cached = path_cache[PathCacheIndex(position, player)];
+  if (cached.valid && cached.horizontal_walls == position.horizontal_walls &&
+      cached.vertical_walls == position.vertical_walls &&
+      cached.pawn == position.pawns[player] && cached.player == player) {
+    return cached.result;
+  }
+  const PathResult result = ComputeShortestPath(position, player, false);
+  cached.horizontal_walls = position.horizontal_walls;
+  cached.vertical_walls = position.vertical_walls;
+  cached.result = result;
+  cached.pawn = position.pawns[player];
+  cached.player = static_cast<uint8_t>(player);
+  cached.valid = true;
+  return result;
 }
 
 int ShortestDistance(const Position& position, int player) {
@@ -558,7 +687,6 @@ MoveList LegalPawnMoves(const Position& position, int player) {
   auto add_destination = [&](int row, int column) {
     result.Push(PackPawnMove(row * 9 + column));
   };
-
   for (int direction = 0; direction < 4; ++direction) {
     const int row = own_row + kRowDirections[direction];
     const int column = own_column + kColumnDirections[direction];
@@ -634,25 +762,17 @@ bool WallTouchesWitness(const PathResult& path, int id, bool vertical) {
   return ((candidates >> id) & 1U) != 0;
 }
 
-bool IsSelectiveWallCandidate(
-    const Position& position, const std::array<PathResult, 2>& paths, int id,
+uint64_t SelectiveWallMask(
+    const Position& position, const std::array<PathResult, 2>& paths,
     bool vertical) {
-  if (WallTouchesWitness(paths[0], id, vertical) ||
-      WallTouchesWitness(paths[1], id, vertical)) {
-    return true;
-  }
-  const int wall_row = id / 8;
-  const int wall_column = id % 8;
-  for (const uint8_t pawn : position.pawns) {
-    const int pawn_row = pawn / 9;
-    const int pawn_column = pawn % 9;
-    int row_distance = wall_row - pawn_row;
-    int column_distance = wall_column - pawn_column;
-    if (row_distance < 0) row_distance = -row_distance;
-    if (column_distance < 0) column_distance = -column_distance;
-    if (row_distance <= 1 && column_distance <= 1) return true;
-  }
-  return false;
+  uint64_t candidates = vertical
+                            ? paths[0].blocking_vertical |
+                                  paths[1].blocking_vertical
+                            : paths[0].blocking_horizontal |
+                                  paths[1].blocking_horizontal;
+  candidates |= kNearPawnWallMasks[position.pawns[0]] |
+                kNearPawnWallMasks[position.pawns[1]];
+  return candidates;
 }
 
 SearchMoveList GenerateSearchMoves(
@@ -680,38 +800,35 @@ SearchMoveList GenerateSearchMoves(
   if (position->walls_left[player] == 0) return result;
   for (int orientation = 0; orientation < 2; ++orientation) {
     const bool vertical = orientation == 1;
-    for (int row = 0; row < 8; ++row) {
-      for (int column = 0; column < 8; ++column) {
-        if (!IsStructurallyLegalWall(*position, row, column, vertical)) {
-          continue;
-        }
-        const int id = row * 8 + column;
-        if (mode == SearchMode::kSelective && !include_all_root_walls &&
-            !IsSelectiveWallCandidate(*position, paths, id, vertical)) {
-          continue;
-        }
-        const uint16_t packed_move = PackWallMove(row, column, vertical);
-        if (partition_index >= 0 &&
-            static_cast<int>(packed_move % partition_count) !=
-                partition_index) {
-          continue;
-        }
-        AddWallUnchecked(position, row, column, vertical);
-        std::array<PathResult, 2> child_paths = paths;
-        bool legal = true;
-        for (int path_player = 0; path_player < 2; ++path_player) {
-          if (WallTouchesWitness(paths[path_player], id, vertical)) {
-            child_paths[path_player] = ShortestPath(*position, path_player);
-            if (child_paths[path_player].distance >= 99) {
-              legal = false;
-              break;
-            }
+    uint64_t candidates = AvailableWallMask(*position, vertical);
+    if (mode == SearchMode::kSelective && !include_all_root_walls) {
+      candidates &= SelectiveWallMask(*position, paths, vertical);
+    }
+    while (candidates != 0) {
+      const int id = __builtin_ctzll(candidates);
+      candidates &= candidates - 1;
+      const int row = id / 8;
+      const int column = id % 8;
+      const uint16_t packed_move = PackWallMove(row, column, vertical);
+      if (partition_index >= 0 &&
+          static_cast<int>(packed_move % partition_count) != partition_index) {
+        continue;
+      }
+      AddWallUnchecked(position, row, column, vertical);
+      std::array<PathResult, 2> child_paths = paths;
+      bool legal = true;
+      for (int path_player = 0; path_player < 2; ++path_player) {
+        if (WallTouchesWitness(paths[path_player], id, vertical)) {
+          child_paths[path_player] = ShortestPath(*position, path_player);
+          if (child_paths[path_player].distance >= 99) {
+            legal = false;
+            break;
           }
         }
-        RemoveWallUnchecked(position, row, column, vertical);
-        if (legal) {
-          result.Push(packed_move, child_paths);
-        }
+      }
+      RemoveWallUnchecked(position, row, column, vertical);
+      if (legal) {
+        result.Push(packed_move, child_paths);
       }
     }
   }
@@ -725,11 +842,15 @@ MoveList CandidateWalls(const Position& position, const PathResult& current,
   MoveList result;
   if (position.walls_left[position.turn] == 0) return result;
   for (int orientation = 0; orientation < 2; ++orientation) {
-    for (int row = 0; row < 8; ++row) {
-      for (int column = 0; column < 8; ++column) {
-        if (IsLegalWall(position, row, column, orientation == 1)) {
-          result.Push(PackWallMove(row, column, orientation == 1));
-        }
+    const bool vertical = orientation == 1;
+    uint64_t candidates = AvailableWallMask(position, vertical);
+    while (candidates != 0) {
+      const int id = __builtin_ctzll(candidates);
+      candidates &= candidates - 1;
+      const int row = id / 8;
+      const int column = id % 8;
+      if (IsLegalWall(position, row, column, vertical)) {
+        result.Push(PackWallMove(row, column, vertical));
       }
     }
   }
@@ -744,6 +865,54 @@ MoveList GenerateMoves(const Position& position, const PathResult& current,
     result.Push(walls.moves[index]);
   }
   return result;
+}
+
+int LegalPawnMoveCount(const Position& position, int player) {
+  int count = 0;
+  const int own = position.pawns[player];
+  const int other = position.pawns[1 - player];
+  const int own_row = own / 9;
+  const int own_column = own % 9;
+  for (int direction = 0; direction < 4; ++direction) {
+    const int row = own_row + kRowDirections[direction];
+    const int column = own_column + kColumnDirections[direction];
+    if (!Inside(row, column)) continue;
+    const int adjacent = row * 9 + column;
+    if (Blocked(position, own, adjacent)) continue;
+    if (adjacent != other) {
+      ++count;
+      continue;
+    }
+
+    const int beyond_row = row + kRowDirections[direction];
+    const int beyond_column = column + kColumnDirections[direction];
+    if (Inside(beyond_row, beyond_column)) {
+      const int beyond = beyond_row * 9 + beyond_column;
+      if (!Blocked(position, other, beyond)) {
+        ++count;
+        continue;
+      }
+    }
+
+    if (kRowDirections[direction] == 0) {
+      for (const int side_row : {-1, 1}) {
+        const int diagonal_row = row + side_row;
+        if (Inside(diagonal_row, column) &&
+            !Blocked(position, other, diagonal_row * 9 + column)) {
+          ++count;
+        }
+      }
+    } else {
+      for (const int side_column : {-1, 1}) {
+        const int diagonal_column = column + side_column;
+        if (Inside(row, diagonal_column) &&
+            !Blocked(position, other, row * 9 + diagonal_column)) {
+          ++count;
+        }
+      }
+    }
+  }
+  return count;
 }
 
 void MakeMove(Position* position, uint16_t move);
@@ -803,8 +972,7 @@ int StaticEvaluation(const Position& position) {
   const int wall_score = WallReserveValue(position.walls_left[0]) -
                          WallReserveValue(position.walls_left[1]);
   const int mobility =
-      (LegalPawnMoves(position, 0).count -
-       LegalPawnMoves(position, 1).count) *
+      (LegalPawnMoveCount(position, 0) - LegalPawnMoveCount(position, 1)) *
       4;
   const int absolute = path_score + wall_score + mobility;
   return position.turn == 0 ? absolute : -absolute;
@@ -818,8 +986,7 @@ int StaticEvaluation(const Position& position,
   const int wall_score = WallReserveValue(position.walls_left[0]) -
                          WallReserveValue(position.walls_left[1]);
   const int mobility =
-      (LegalPawnMoves(position, 0).count -
-       LegalPawnMoves(position, 1).count) *
+      (LegalPawnMoveCount(position, 0) - LegalPawnMoveCount(position, 1)) *
       4;
   const int absolute = path_score + wall_score + mobility;
   return position.turn == 0 ? absolute : -absolute;
@@ -896,6 +1063,8 @@ class Search {
         root_index_(root_index),
         root_count_(root_count),
         mode_(mode) {
+    path_cache_enabled = initial.horizontal_walls != 0 ||
+                         initial.vertical_walls != 0;
     started_ = Clock::now();
     last_report_ = started_;
     if (start_new_generation) BeginSearchGeneration();
@@ -1066,9 +1235,11 @@ class Search {
   TranspositionEntry* FindEntry(const Position& position) {
     TranspositionCluster& cluster =
         transposition_table[PositionIndex(position)];
+    const uint32_t metadata = PositionMetadata(position);
+    const uint8_t search_mode = static_cast<uint8_t>(mode_);
     TranspositionEntry* best = nullptr;
     for (TranspositionEntry& entry : cluster.entries) {
-      if (SamePosition(entry, position, mode_) &&
+      if (SamePosition(entry, position, metadata, search_mode) &&
           (best == nullptr || entry.depth > best->depth)) {
         best = &entry;
       }
@@ -1080,9 +1251,11 @@ class Search {
                   uint16_t best_move, int ply) {
     TranspositionCluster& cluster =
         transposition_table[PositionIndex(position)];
+    const uint32_t metadata = PositionMetadata(position);
+    const uint8_t search_mode = static_cast<uint8_t>(mode_);
     TranspositionEntry* replacement = &cluster.entries[0];
     for (TranspositionEntry& candidate : cluster.entries) {
-      if (SamePosition(candidate, position, mode_)) {
+      if (SamePosition(candidate, position, metadata, search_mode)) {
         replacement = &candidate;
         break;
       }
@@ -1099,19 +1272,20 @@ class Search {
       if (candidate_value < replacement_value) replacement = &candidate;
     }
     TranspositionEntry& entry = *replacement;
-    if (SamePosition(entry, position, mode_) && entry.depth > depth &&
+    if (SamePosition(entry, position, metadata, search_mode) &&
+        entry.depth > depth &&
         entry.bound == Bound::kExact) {
       return;
     }
     entry.horizontal_walls = position.horizontal_walls;
     entry.vertical_walls = position.vertical_walls;
-    entry.metadata = PositionMetadata(position);
+    entry.metadata = metadata;
     entry.score = ScoreToTable(score, ply);
     entry.best_move = best_move;
     entry.depth = static_cast<uint8_t>(depth);
     entry.bound = bound;
     entry.generation = transposition_generation;
-    entry.search_mode = static_cast<uint8_t>(mode_);
+    entry.search_mode = search_mode;
   }
 
   void OrderMoves(const Position& position, SearchMoveList* moves,
@@ -1147,28 +1321,23 @@ class Search {
             160;
       } else {
         const int player = position.turn;
-        const auto& child_paths = moves->moves[index].child_paths;
         priority +=
-            (child_paths[1 - player].distance - paths[1 - player].distance) *
+            (moves->moves[index].child_paths[1 - player].distance -
+             paths[1 - player].distance) *
                 120 -
-            (child_paths[player].distance - paths[player].distance) * 90;
+            (moves->moves[index].child_paths[player].distance -
+             paths[player].distance) * 90;
         priority -= WallReserveCost(position.walls_left[player]);
       }
       priorities[index] = priority;
     }
-
-    for (int index = 1; index < moves->count; ++index) {
-      const SearchMove move = moves->moves[index];
-      const int priority = priorities[index];
-      int cursor = index;
-      while (cursor > 0 && priorities[cursor - 1] < priority) {
-        moves->moves[cursor] = moves->moves[cursor - 1];
-        priorities[cursor] = priorities[cursor - 1];
-        --cursor;
-      }
-      moves->moves[cursor] = move;
-      priorities[cursor] = priority;
-    }
+    std::sort(
+        moves->order.begin(), moves->order.begin() + moves->count,
+        [&priorities](uint16_t left, uint16_t right) {
+          return priorities[left] != priorities[right]
+                     ? priorities[left] > priorities[right]
+                     : left < right;
+        });
   }
 
   bool IsRaceCritical(const std::array<PathResult, 2>& paths) const {
@@ -1253,9 +1422,14 @@ class Search {
     bool searched_move = false;
     int searched_count = 0;
     std::array<uint16_t, 136> searched_moves{};
-    const int static_evaluation = StaticEvaluation(*position, paths);
+    const bool needs_static_evaluation =
+        mode_ == SearchMode::kSelective && depth <= 3;
+    const int static_evaluation =
+        needs_static_evaluation ? StaticEvaluation(*position, paths) : 0;
     for (int index = 0; index < moves.count; ++index) {
-      const uint16_t move = moves.moves[index].move;
+      const int move_index = moves.order[index];
+      const SearchMove& search_move = moves.moves[move_index];
+      const uint16_t move = search_move.move;
       if (ply == 0 && root_count_ > 1 &&
           static_cast<int>(move % root_count_) != root_index_) {
         continue;
@@ -1287,13 +1461,13 @@ class Search {
       int next_depth = depth - 1;
       int next_extensions = extensions;
       if (mode_ == SearchMode::kSelective && extensions < kMaximumRaceExtensions &&
-          IsRaceCritical(moves.moves[index].child_paths)) {
+          IsRaceCritical(search_move.child_paths)) {
         ++next_depth;
         ++next_extensions;
       }
       int score;
       if (searched_count == 1) {
-        score = -Negamax(position, moves.moves[index].child_paths, next_depth,
+        score = -Negamax(position, search_move.child_paths, next_depth,
                          -beta, -alpha, ply + 1, next_extensions);
       } else {
         int search_depth = next_depth;
@@ -1306,23 +1480,23 @@ class Search {
           if (depth >= 6 && searched_count > 10) reduction = 2;
           const int reduced_depth =
               search_depth > reduction ? search_depth - reduction : 0;
-          score = -Negamax(position, moves.moves[index].child_paths,
+          score = -Negamax(position, search_move.child_paths,
                            reduced_depth, -alpha - 1, -alpha, ply + 1,
                            next_extensions);
           if (!timed_out_ && score > alpha) {
             ++researches_;
-            score = -Negamax(position, moves.moves[index].child_paths,
+            score = -Negamax(position, search_move.child_paths,
                              search_depth, -alpha - 1, -alpha, ply + 1,
                              next_extensions);
           }
         } else {
-          score = -Negamax(position, moves.moves[index].child_paths,
+          score = -Negamax(position, search_move.child_paths,
                            search_depth, -alpha - 1, -alpha, ply + 1,
                            next_extensions);
         }
         if (!timed_out_ && score > alpha && score < beta) {
           ++researches_;
-          score = -Negamax(position, moves.moves[index].child_paths,
+          score = -Negamax(position, search_move.child_paths,
                            next_depth, -beta, -alpha, ply + 1,
                            next_extensions);
         }

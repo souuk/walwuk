@@ -45,6 +45,19 @@ test("deep analysis has no visible time or depth controls", () => {
   assert.match(content, /data-field="nodes"/);
 });
 
+test("the compact analysis panel shows only the requested metrics", () => {
+  assert.doesNotMatch(content, /data-field="side"/);
+  assert.doesNotMatch(content, /data-field="turn"/);
+  assert.match(content, /data-field="walls"/);
+  assert.match(content, /data-field="winning"/);
+  assert.match(content, /data-field="nodes"/);
+  assert.match(content, /data-field="sel-depth"/);
+  assert.match(content, /data-field="real-depth"/);
+  assert.match(content, /data-field="speed"/);
+  assert.match(content, /result\.selDepth/);
+  assert.match(content, /result\.verifiedDepth/);
+});
+
 test("the board scanner excludes its own recommendation marker", () => {
   assert.match(
     content,
