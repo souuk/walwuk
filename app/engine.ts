@@ -47,6 +47,15 @@ export interface AnalysisResult {
   reducedSearches: number;
   researches: number;
   prunedMoves: number;
+  exactEndgameHits?: number;
+  profile?: {
+    fullPathSearches: number;
+    pathCacheHits: number;
+    wallCandidates: number;
+    childPathsPrepared: number;
+    illegalWalls: number;
+    ttProbes: number;
+  };
   selective: boolean;
   confidence: AnalysisConfidence;
   stopReason: AnalysisStopReason;

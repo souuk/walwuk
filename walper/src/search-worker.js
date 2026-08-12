@@ -74,9 +74,9 @@ self.onmessage = async ({ data }) => {
 
     if (lane === "hybrid") {
       await run("verify", 5, 1000);
-      await run("main", 20, -1);
+      await run("main", 20, -2);
     } else {
-      await run(lane, 20, -1);
+      await run(lane, 20, -2);
     }
   } catch (error) {
     self.postMessage({

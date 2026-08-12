@@ -1,4 +1,3 @@
-const MAX_ENGINE_WORKERS = 12;
 const WASM_MEMORY_PER_WORKER = 96 * 1024 * 1024;
 const FALLBACK_MEMORY_BUDGET = 256 * 1024 * 1024;
 const MAX_MEMORY_BUDGET = 1536 * 1024 * 1024;
@@ -24,7 +23,7 @@ function resourceBudget() {
   const memoryWorkers = Math.max(1, Math.floor(memoryBudgetBytes / WASM_MEMORY_PER_WORKER));
   const searchWorkers = Math.max(
     1,
-    Math.min(MAX_ENGINE_WORKERS, cpuWorkers, memoryWorkers),
+    Math.min(cpuWorkers, memoryWorkers),
   );
   return {
     searchWorkers,
@@ -100,6 +99,7 @@ function aggregateLane(states, lane) {
     reducedSearches: live.reduce((total, result) => total + (result.reducedSearches || 0), 0),
     researches: live.reduce((total, result) => total + (result.researches || 0), 0),
     prunedMoves: live.reduce((total, result) => total + (result.prunedMoves || 0), 0),
+    exactEndgameHits: live.reduce((total, result) => total + (result.exactEndgameHits || 0), 0),
   };
 }
 
@@ -130,6 +130,7 @@ function hybridResult(main, verifier, budget, allDone) {
     reducedSearches: (main?.reducedSearches || 0) + (verifier?.reducedSearches || 0),
     researches: (main?.researches || 0) + (verifier?.researches || 0),
     prunedMoves: (main?.prunedMoves || 0) + (verifier?.prunedMoves || 0),
+    exactEndgameHits: (main?.exactEndgameHits || 0) + (verifier?.exactEndgameHits || 0),
     confidence: verifier?.depth > 0 && (agrees || verifierOverrides) ? "verified" : "provisional",
     selective: true,
     stopReason: allDone ? "depth" : selected.stopReason,

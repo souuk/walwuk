@@ -1,6 +1,5 @@
 import type { EngineResourceUsage } from "./engine";
 
-const MAX_SEARCH_WORKERS = 12;
 const WASM_MEMORY_PER_WORKER = 96 * 1024 * 1024;
 const FALLBACK_MEMORY_BUDGET = 256 * 1024 * 1024;
 const MAX_MEMORY_BUDGET = 1536 * 1024 * 1024;
@@ -49,7 +48,7 @@ export function calculateEngineResourceBudget(
   const memoryWorkers = Math.max(1, Math.floor(memoryBudgetBytes / WASM_MEMORY_PER_WORKER));
   const searchWorkers = Math.max(
     1,
-    Math.min(MAX_SEARCH_WORKERS, cpuWorkers, memoryWorkers),
+    Math.min(cpuWorkers, memoryWorkers),
   );
 
   return {

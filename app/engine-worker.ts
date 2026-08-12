@@ -110,6 +110,10 @@ function aggregateLane(states: WorkerState[], lane: SearchLane): AnalysisResult 
     reducedSearches: live.reduce((total, result) => total + result.reducedSearches, 0),
     researches: live.reduce((total, result) => total + result.researches, 0),
     prunedMoves: live.reduce((total, result) => total + result.prunedMoves, 0),
+    exactEndgameHits: live.reduce(
+      (total, result) => total + (result.exactEndgameHits ?? 0),
+      0,
+    ),
   };
 }
 
@@ -146,6 +150,8 @@ function mergeHybridResult(
     reducedSearches: (main?.reducedSearches ?? 0) + (verifier?.reducedSearches ?? 0),
     researches: (main?.researches ?? 0) + (verifier?.researches ?? 0),
     prunedMoves: (main?.prunedMoves ?? 0) + (verifier?.prunedMoves ?? 0),
+    exactEndgameHits:
+      (main?.exactEndgameHits ?? 0) + (verifier?.exactEndgameHits ?? 0),
     selective: true,
     confidence: verifiedDepth > 0 && (agrees || verifierOverrides) ? "verified" : "provisional",
     stopReason: allDone

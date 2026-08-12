@@ -14,6 +14,14 @@ function option(name, fallback) {
 const timeMs = Math.min(15_000, Math.max(25, Number.parseInt(option("time-ms", "1000"), 10)));
 const maxDepth = Math.max(1, Number.parseInt(option("max-depth", "15"), 10));
 const outputPath = option("output", "");
+const requestedPositions = option("positions", "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+const selectedFixtures = requestedPositions.length
+  ? fixtures.filter(({ name }) => requestedPositions.includes(name))
+  : fixtures;
+if (!selectedFixtures.length) throw new Error("no benchmark positions matched --positions");
 
 function summarize(result) {
   return {
@@ -32,11 +40,12 @@ function summarize(result) {
     effectiveBranchingFactor: result.depth > 0
       ? Number(Math.pow(Math.max(1, result.nodes), 1 / result.depth).toFixed(3))
       : 0,
+    profile: result.profile ?? null,
   };
 }
 
 const records = [];
-for (const fixture of fixtures) {
+for (const fixture of selectedFixtures) {
   const exhaustive = nativeAnalyze(fixture.state, maxDepth, timeMs);
   const selective = nativeAnalyzeSelective(fixture.state, maxDepth, timeMs);
   const record = {
@@ -66,4 +75,3 @@ if (outputPath) {
   await writeFile(outputPath, `${JSON.stringify({ generatedAt: new Date().toISOString(), records }, null, 2)}\n`);
   console.log(`wrote ${outputPath}`);
 }
-

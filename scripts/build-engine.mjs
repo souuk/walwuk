@@ -11,12 +11,14 @@ const localCompiler = resolve(
   process.platform === "win32" ? "em++.exe" : "em++",
 );
 const useLocalWindowsSdk = process.platform === "win32" && existsSync(localCompiler);
+const profileBuild = process.argv.includes("--profile");
+const optionalArguments = profileBuild ? ["-DWALWUK_PROFILE=1"] : [];
 const compiler = useLocalWindowsSdk
   ? resolve(".emsdk", "python", "3.13.3_64bit", "python.exe")
   : existsSync(localCompiler) ? localCompiler : "em++";
 const compilerArguments = useLocalWindowsSdk
-  ? [resolve(".emsdk", "upstream", "emscripten", "em++.py"), "@engine-native/emscripten.rsp"]
-  : ["@engine-native/emscripten.rsp"];
+  ? [resolve(".emsdk", "upstream", "emscripten", "em++.py"), ...optionalArguments, "@engine-native/emscripten.rsp"]
+  : [...optionalArguments, "@engine-native/emscripten.rsp"];
 const environment = { ...process.env };
 if (useLocalWindowsSdk) {
   environment.EM_CONFIG = resolve(".emsdk", ".emscripten");

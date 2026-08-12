@@ -13,7 +13,7 @@ const manifest = JSON.parse(
 test("the service worker delegates capped hybrid analysis to native workers", () => {
   assert.match(background, /chrome\.offscreen\.createDocument/);
   assert.doesNotMatch(background, /\bimport\s*\(/);
-  assert.match(engineWorker, /MAX_ENGINE_WORKERS = 12/);
+  assert.doesNotMatch(engineWorker, /MAX_ENGINE_WORKERS/);
   assert.match(engineWorker, /new Worker\(new URL\("\.\/search-worker\.js"/);
   assert.match(
     searchWorker,
@@ -22,7 +22,7 @@ test("the service worker delegates capped hybrid analysis to native workers", ()
   assert.match(searchWorker, /_walwuk_analyze_selective_split/);
   assert.match(searchWorker, /_walwuk_analyze_split/);
   assert.match(searchWorker, /await run\("verify", 5, 1000\)/);
-  assert.match(searchWorker, /await run\("main", 20, -1\)/);
+  assert.match(searchWorker, /await run\("main", 20, -2\)/);
   assert.match(engineWorker, /Math\.floor\(logicalProcessors \* 0\.75\)/);
   assert.match(engineWorker, /verifierCount = Math\.max\(1, Math\.floor\(workerCount \* 0\.25\)\)/);
   assert.match(engineWorker, /depth: main\?\.depth \|\| 0/);

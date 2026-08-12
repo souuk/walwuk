@@ -11,6 +11,22 @@
 
 namespace walwuk {
 
+#ifdef WALWUK_PROFILE
+struct ProfilingCounters {
+  uint64_t full_path_searches = 0;
+  uint64_t path_cache_hits = 0;
+  uint64_t wall_candidates = 0;
+  uint64_t child_paths_prepared = 0;
+  uint64_t illegal_walls = 0;
+  uint64_t tt_probes = 0;
+};
+
+ProfilingCounters profiling;
+#define WALWUK_PROFILE_INCREMENT(field) (++profiling.field)
+#else
+#define WALWUK_PROFILE_INCREMENT(field) ((void)0)
+#endif
+
 constexpr int kBoardSize = 9;
 constexpr int kSquareCount = 81;
 constexpr int kInfinity = 1'000'000;
@@ -24,6 +40,8 @@ constexpr int kTranspositionClusterSize = 4;
 constexpr int kMaximumSearchPly = 64;
 constexpr int kMoveHistorySize = 81 + 128;
 constexpr int kMaximumRaceExtensions = 2;
+constexpr int kPawnStateCount = kSquareCount * kSquareCount * 2;
+constexpr std::size_t kZeroWallCacheSize = 64;
 constexpr uint64_t kHashSeed = 0x6a09e667f3bcc909ULL;
 
 // The first few remaining walls are much more valuable than the last few.
@@ -312,7 +330,6 @@ struct MoveList {
 
 struct SearchMove {
   uint16_t move = kNoMove;
-  std::array<PathResult, 2> child_paths{};
 };
 
 struct SearchMoveList {
@@ -320,8 +337,8 @@ struct SearchMoveList {
   std::array<SearchMove, 136> moves{};
   std::array<uint16_t, 136> order{};
 
-  void Push(uint16_t move, const std::array<PathResult, 2>& child_paths) {
-    moves[count] = {move, child_paths};
+  void Push(uint16_t move) {
+    moves[count] = {move};
     order[count] = static_cast<uint16_t>(count);
     ++count;
   }
@@ -367,6 +384,7 @@ struct AnalysisResult {
   uint64_t reduced_searches = 0;
   uint64_t researches = 0;
   uint64_t pruned_moves = 0;
+  uint64_t exact_endgame_hits = 0;
   int nps = 0;
   int time_ms = 0;
   const char* stop_reason = "depth";
@@ -374,8 +392,17 @@ struct AnalysisResult {
   bool selective = false;
 };
 
+struct ZeroWallCacheEntry {
+  uint64_t horizontal_walls = 0;
+  uint64_t vertical_walls = 0;
+  std::array<int8_t, kPawnStateCount> outcome{};
+  std::array<uint16_t, kPawnStateCount> distance{};
+  bool valid = false;
+};
+
 std::vector<TranspositionCluster> transposition_table(
     kTranspositionClusterCount);
+std::array<ZeroWallCacheEntry, kZeroWallCacheSize> zero_wall_cache;
 uint8_t transposition_generation = 0;
 std::string exported_result;
 
@@ -405,6 +432,35 @@ bool IsVerticalWall(uint16_t move) { return (move & kVerticalWall) != 0; }
 int MoveSquare(uint16_t move) { return move & 0x7f; }
 
 int WallId(uint16_t move) { return move & 0x3f; }
+
+uint16_t MirrorMove(uint16_t move) {
+  if (!IsWallMove(move)) {
+    const int square = MoveSquare(move);
+    return PackPawnMove((square / 9) * 9 + (8 - square % 9));
+  }
+  const int id = WallId(move);
+  return PackWallMove(id / 8, 7 - id % 8, IsVerticalWall(move));
+}
+
+uint64_t MirrorWallMask(uint64_t walls) {
+  uint64_t mirrored = 0;
+  for (int row = 0; row < 8; ++row) {
+    const uint8_t bits = static_cast<uint8_t>(walls >> (row * 8));
+    const uint8_t reversed = static_cast<uint8_t>(
+        ((bits * 0x0802U & 0x22110U) | (bits * 0x8020U & 0x88440U)) *
+            0x10101U >>
+        16);
+    mirrored |= static_cast<uint64_t>(reversed) << (row * 8);
+  }
+  return mirrored;
+}
+
+bool IsLeftRightSymmetric(const Position& position) {
+  return position.pawns[0] % 9 == 4 && position.pawns[1] % 9 == 4 &&
+         MirrorWallMask(position.horizontal_walls) ==
+             position.horizontal_walls &&
+         MirrorWallMask(position.vertical_walls) == position.vertical_walls;
+}
 
 int MoveHistoryIndex(uint16_t move) {
   if (!IsWallMove(move)) return MoveSquare(move);
@@ -575,6 +631,7 @@ void AddBlockingWallCandidates(int first, int second, PathResult* result) {
 
 PathResult ComputeShortestPath(const Position& position, int player,
                                bool all_shortest_paths) {
+  WALWUK_PROFILE_INCREMENT(full_path_searches);
   const Bits81 target = player == 0 ? kTopRow : kBottomRow;
   std::array<uint64_t, kSquareCount> layer_low;
   std::array<uint32_t, kSquareCount> layer_high;
@@ -653,6 +710,7 @@ PathResult ShortestPath(const Position& position, int player,
   if (cached.valid && cached.horizontal_walls == position.horizontal_walls &&
       cached.vertical_walls == position.vertical_walls &&
       cached.pawn == position.pawns[player] && cached.player == player) {
+    WALWUK_PROFILE_INCREMENT(path_cache_hits);
     return cached.result;
   }
   const PathResult result = ComputeShortestPath(position, player, false);
@@ -776,33 +834,29 @@ uint64_t SelectiveWallMask(
 }
 
 SearchMoveList GenerateSearchMoves(
-    Position* position, const std::array<PathResult, 2>& paths,
+    const Position& position, const std::array<PathResult, 2>& paths,
     SearchMode mode = SearchMode::kExhaustive,
     bool include_all_root_walls = false, int partition_index = -1,
-    int partition_count = 1) {
+    int partition_count = 1, bool reduce_root_symmetry = false) {
   SearchMoveList result;
-  const int player = position->turn;
-  const MoveList pawn_moves = LegalPawnMoves(*position, player);
-  const uint8_t original_pawn = position->pawns[player];
+  const int player = position.turn;
+  const MoveList pawn_moves = LegalPawnMoves(position, player);
   for (int index = 0; index < pawn_moves.count; ++index) {
     const uint16_t move = pawn_moves.moves[index];
+    if (reduce_root_symmetry && move > MirrorMove(move)) continue;
     if (partition_index >= 0 &&
         static_cast<int>(move % partition_count) != partition_index) {
       continue;
     }
-    position->pawns[player] = static_cast<uint8_t>(MoveSquare(move));
-    std::array<PathResult, 2> child_paths = paths;
-    child_paths[player] = ShortestPath(*position, player);
-    result.Push(move, child_paths);
+    result.Push(move);
   }
-  position->pawns[player] = original_pawn;
 
-  if (position->walls_left[player] == 0) return result;
+  if (position.walls_left[player] == 0) return result;
   for (int orientation = 0; orientation < 2; ++orientation) {
     const bool vertical = orientation == 1;
-    uint64_t candidates = AvailableWallMask(*position, vertical);
+    uint64_t candidates = AvailableWallMask(position, vertical);
     if (mode == SearchMode::kSelective && !include_all_root_walls) {
-      candidates &= SelectiveWallMask(*position, paths, vertical);
+      candidates &= SelectiveWallMask(position, paths, vertical);
     }
     while (candidates != 0) {
       const int id = __builtin_ctzll(candidates);
@@ -810,26 +864,15 @@ SearchMoveList GenerateSearchMoves(
       const int row = id / 8;
       const int column = id % 8;
       const uint16_t packed_move = PackWallMove(row, column, vertical);
+      if (reduce_root_symmetry && packed_move > MirrorMove(packed_move)) {
+        continue;
+      }
+      WALWUK_PROFILE_INCREMENT(wall_candidates);
       if (partition_index >= 0 &&
           static_cast<int>(packed_move % partition_count) != partition_index) {
         continue;
       }
-      AddWallUnchecked(position, row, column, vertical);
-      std::array<PathResult, 2> child_paths = paths;
-      bool legal = true;
-      for (int path_player = 0; path_player < 2; ++path_player) {
-        if (WallTouchesWitness(paths[path_player], id, vertical)) {
-          child_paths[path_player] = ShortestPath(*position, path_player);
-          if (child_paths[path_player].distance >= 99) {
-            legal = false;
-            break;
-          }
-        }
-      }
-      RemoveWallUnchecked(position, row, column, vertical);
-      if (legal) {
-        result.Push(packed_move, child_paths);
-      }
+      result.Push(packed_move);
     }
   }
   return result;
@@ -865,6 +908,160 @@ MoveList GenerateMoves(const Position& position, const PathResult& current,
     result.Push(walls.moves[index]);
   }
   return result;
+}
+
+int PawnStateIndex(int pawn_zero, int pawn_one, int turn) {
+  return ((pawn_zero * kSquareCount + pawn_one) << 1) | turn;
+}
+
+void DecodePawnState(int index, int* pawn_zero, int* pawn_one, int* turn) {
+  *turn = index & 1;
+  const int pawns = index >> 1;
+  *pawn_zero = pawns / kSquareCount;
+  *pawn_one = pawns % kSquareCount;
+}
+
+std::size_t ZeroWallCacheIndex(const Position& position) {
+  uint64_t key = position.horizontal_walls * 0x9e3779b97f4a7c15ULL;
+  key ^= position.vertical_walls * 0xbf58476d1ce4e5b9ULL;
+  key ^= key >> 31;
+  return static_cast<std::size_t>(key) & (kZeroWallCacheSize - 1);
+}
+
+void SolveZeroWallTopology(const Position& topology,
+                           ZeroWallCacheEntry* result) {
+  result->horizontal_walls = topology.horizontal_walls;
+  result->vertical_walls = topology.vertical_walls;
+  result->outcome.fill(0);
+  result->distance.fill(0);
+
+  std::array<uint8_t, kPawnStateCount> remaining{};
+  std::array<uint16_t, kPawnStateCount> predecessor_count{};
+  Position state = topology;
+  state.walls_left = {0, 0};
+  for (int index = 0; index < kPawnStateCount; ++index) {
+    int pawn_zero;
+    int pawn_one;
+    int turn;
+    DecodePawnState(index, &pawn_zero, &pawn_one, &turn);
+    if (pawn_zero == pawn_one || pawn_zero / 9 == 0 || pawn_one / 9 == 8) {
+      continue;
+    }
+    state.pawns = {static_cast<uint8_t>(pawn_zero),
+                   static_cast<uint8_t>(pawn_one)};
+    state.turn = static_cast<uint8_t>(turn);
+    const MoveList moves = LegalPawnMoves(state, turn);
+    remaining[index] = static_cast<uint8_t>(moves.count);
+    for (int move_index = 0; move_index < moves.count; ++move_index) {
+      const int destination = MoveSquare(moves.moves[move_index]);
+      const int child = turn == 0
+                            ? PawnStateIndex(destination, pawn_one, 1)
+                            : PawnStateIndex(pawn_zero, destination, 0);
+      ++predecessor_count[child];
+    }
+  }
+
+  std::array<uint32_t, kPawnStateCount + 1> offsets{};
+  for (int index = 0; index < kPawnStateCount; ++index) {
+    offsets[index + 1] = offsets[index] + predecessor_count[index];
+  }
+  std::vector<uint16_t> predecessors(offsets.back());
+  std::array<uint32_t, kPawnStateCount> cursors{};
+  std::copy(offsets.begin(), offsets.begin() + kPawnStateCount,
+            cursors.begin());
+  for (int index = 0; index < kPawnStateCount; ++index) {
+    int pawn_zero;
+    int pawn_one;
+    int turn;
+    DecodePawnState(index, &pawn_zero, &pawn_one, &turn);
+    if (pawn_zero == pawn_one || pawn_zero / 9 == 0 || pawn_one / 9 == 8) {
+      continue;
+    }
+    state.pawns = {static_cast<uint8_t>(pawn_zero),
+                   static_cast<uint8_t>(pawn_one)};
+    state.turn = static_cast<uint8_t>(turn);
+    const MoveList moves = LegalPawnMoves(state, turn);
+    for (int move_index = 0; move_index < moves.count; ++move_index) {
+      const int destination = MoveSquare(moves.moves[move_index]);
+      const int child = turn == 0
+                            ? PawnStateIndex(destination, pawn_one, 1)
+                            : PawnStateIndex(pawn_zero, destination, 0);
+      predecessors[cursors[child]++] = static_cast<uint16_t>(index);
+    }
+  }
+
+  std::array<uint16_t, kPawnStateCount> queue{};
+  int head = 0;
+  int tail = 0;
+  for (int index = 0; index < kPawnStateCount; ++index) {
+    int pawn_zero;
+    int pawn_one;
+    int turn;
+    DecodePawnState(index, &pawn_zero, &pawn_one, &turn);
+    if (pawn_zero == pawn_one) continue;
+    const int winner = pawn_zero / 9 == 0 ? 0 : pawn_one / 9 == 8 ? 1 : -1;
+    if (winner == -1) continue;
+    result->outcome[index] = winner == turn ? 1 : -1;
+    queue[tail++] = static_cast<uint16_t>(index);
+  }
+
+  while (head < tail) {
+    const int resolved = queue[head++];
+    for (uint32_t cursor = offsets[resolved]; cursor < offsets[resolved + 1];
+         ++cursor) {
+      const int predecessor = predecessors[cursor];
+      if (result->outcome[predecessor] != 0) continue;
+      if (result->outcome[resolved] < 0) {
+        result->outcome[predecessor] = 1;
+        result->distance[predecessor] =
+            static_cast<uint16_t>(result->distance[resolved] + 1);
+        queue[tail++] = static_cast<uint16_t>(predecessor);
+        continue;
+      }
+      if (remaining[predecessor] > 0) --remaining[predecessor];
+      result->distance[predecessor] = std::max(
+          result->distance[predecessor],
+          static_cast<uint16_t>(result->distance[resolved] + 1));
+      if (remaining[predecessor] == 0) {
+        result->outcome[predecessor] = -1;
+        queue[tail++] = static_cast<uint16_t>(predecessor);
+      }
+    }
+  }
+  result->valid = true;
+}
+
+const ZeroWallCacheEntry& ZeroWallSolution(const Position& position) {
+  ZeroWallCacheEntry& cached = zero_wall_cache[ZeroWallCacheIndex(position)];
+  if (!cached.valid ||
+      cached.horizontal_walls != position.horizontal_walls ||
+      cached.vertical_walls != position.vertical_walls) {
+    SolveZeroWallTopology(position, &cached);
+  }
+  return cached;
+}
+
+bool PrepareChildPaths(const Position& position, uint16_t move,
+                       const std::array<PathResult, 2>& paths,
+                       std::array<PathResult, 2>* child_paths) {
+  WALWUK_PROFILE_INCREMENT(child_paths_prepared);
+  *child_paths = paths;
+  if (!IsWallMove(move)) {
+    const int moved_player = 1 - position.turn;
+    (*child_paths)[moved_player] = ShortestPath(position, moved_player);
+    return true;
+  }
+  const int id = WallId(move);
+  const bool vertical = IsVerticalWall(move);
+  for (int player = 0; player < 2; ++player) {
+    if (!WallTouchesWitness(paths[player], id, vertical)) continue;
+    (*child_paths)[player] = ShortestPath(position, player);
+    if ((*child_paths)[player].distance >= 99) {
+      WALWUK_PROFILE_INCREMENT(illegal_walls);
+      return false;
+    }
+  }
+  return true;
 }
 
 int LegalPawnMoveCount(const Position& position, int player) {
@@ -1042,12 +1239,23 @@ std::string ResultJson(const AnalysisResult& result) {
          << ",\"reducedSearches\":" << result.reduced_searches
          << ",\"researches\":" << result.researches
          << ",\"prunedMoves\":" << result.pruned_moves
+         << ",\"exactEndgameHits\":" << result.exact_endgame_hits
          << ",\"selective\":" << (result.selective ? "true" : "false")
          << ",\"confidence\":\""
          << (result.verified_depth > 0 ? "verified" : "provisional") << "\""
          << ",\"stopReason\":\""
          << result.stop_reason << "\",\"bound\":\""
-         << result.score_bound << "\",\"backend\":\"wasm\"}";
+         << result.score_bound << "\",\"backend\":\"wasm\"";
+#ifdef WALWUK_PROFILE
+  output << ",\"profile\":{\"fullPathSearches\":"
+         << profiling.full_path_searches << ",\"pathCacheHits\":"
+         << profiling.path_cache_hits << ",\"wallCandidates\":"
+         << profiling.wall_candidates << ",\"childPathsPrepared\":"
+         << profiling.child_paths_prepared << ",\"illegalWalls\":"
+         << profiling.illegal_walls << ",\"ttProbes\":"
+         << profiling.tt_probes << '}';
+#endif
+  output << '}';
   return output.str();
 }
 
@@ -1062,9 +1270,15 @@ class Search {
         time_ms_(time_ms),
         root_index_(root_index),
         root_count_(root_count),
-        mode_(mode) {
+        mode_(mode),
+        strict_horizon_(time_ms == -1),
+        solve_zero_wall_(initial.walls_left[0] == 0 &&
+                         initial.walls_left[1] == 0) {
     path_cache_enabled = initial.horizontal_walls != 0 ||
                          initial.vertical_walls != 0;
+#ifdef WALWUK_PROFILE
+    profiling = {};
+#endif
     started_ = Clock::now();
     last_report_ = started_;
     if (start_new_generation) BeginSearchGeneration();
@@ -1126,7 +1340,7 @@ class Search {
     completed_.pv_length = 1;
 
     Position root = initial_;
-    SearchMoveList moves = GenerateSearchMoves(&root, root_paths, mode_, true);
+    SearchMoveList moves = GenerateSearchMoves(root, root_paths, mode_, true);
     const SearchMove* selected = nullptr;
     for (int index = 0; index < moves.count; ++index) {
       if (moves.moves[index].move == root_move) {
@@ -1141,8 +1355,20 @@ class Search {
       return completed_;
     }
 
-    return RunPreparedRootMove(root_move, selected->child_paths, root_paths,
-                               depth, alpha, beta);
+    const uint8_t original_pawn = root.pawns[root.turn];
+    MakeMove(&root, root_move);
+    std::array<PathResult, 2> child_paths;
+    const bool legal = PrepareChildPaths(root, root_move, root_paths,
+                                         &child_paths);
+    UnmakeMove(&root, root_move, original_pawn);
+    if (!legal) {
+      completed_.best_move = kNoMove;
+      completed_.pv_length = 0;
+      RefreshStatistics(&completed_);
+      return completed_;
+    }
+    return RunPreparedRootMove(root_move, child_paths, root_paths, depth,
+                               alpha, beta);
   }
 
   AnalysisResult RunPreparedRootMove(
@@ -1206,6 +1432,7 @@ class Search {
     result->reduced_searches = reduced_searches_;
     result->researches = researches_;
     result->pruned_moves = pruned_moves_;
+    result->exact_endgame_hits = exact_endgame_hits_;
     result->selective_depth =
         mode_ == SearchMode::kSelective ? result->depth : 0;
     result->verified_depth =
@@ -1233,6 +1460,7 @@ class Search {
   }
 
   TranspositionEntry* FindEntry(const Position& position) {
+    WALWUK_PROFILE_INCREMENT(tt_probes);
     TranspositionCluster& cluster =
         transposition_table[PositionIndex(position)];
     const uint32_t metadata = PositionMetadata(position);
@@ -1315,18 +1543,19 @@ class Search {
         const int after_distance = after_row > goal ? after_row - goal
                                                     : goal - after_row;
         priority += (before_distance - after_distance) * 90;
+        Position child = position;
+        MakeMove(&child, move);
         priority +=
             (paths[position.turn].distance -
-             moves->moves[index].child_paths[position.turn].distance) *
-            160;
+             ShortestPath(child, position.turn).distance) * 160;
       } else {
         const int player = position.turn;
-        priority +=
-            (moves->moves[index].child_paths[1 - player].distance -
-             paths[1 - player].distance) *
-                120 -
-            (moves->moves[index].child_paths[player].distance -
-             paths[player].distance) * 90;
+        const int id = WallId(move);
+        const bool vertical = IsVerticalWall(move);
+        if (WallTouchesWitness(paths[1 - player], id, vertical)) {
+          priority += 120;
+        }
+        if (WallTouchesWitness(paths[player], id, vertical)) priority -= 90;
         priority -= WallReserveCost(position.walls_left[player]);
       }
       priorities[index] = priority;
@@ -1370,6 +1599,19 @@ class Search {
     if (winner != -1) {
       return winner == position->turn ? kWin - ply : -kWin + ply;
     }
+    if (solve_zero_wall_ && ply > 0 && position->walls_left[0] == 0 &&
+        position->walls_left[1] == 0) {
+      const ZeroWallCacheEntry& solution = ZeroWallSolution(*position);
+      const int state_index = PawnStateIndex(
+          position->pawns[0], position->pawns[1], position->turn);
+      const int outcome = solution.outcome[state_index];
+      if (outcome != 0) {
+        ++exact_endgame_hits_;
+        const int distance = solution.distance[state_index];
+        return outcome > 0 ? kWin - ply - distance
+                           : -kWin + ply + distance;
+      }
+    }
     alpha = std::max(alpha, -kWin + ply);
     beta = std::min(beta, kWin - ply);
     if (alpha >= beta) return alpha;
@@ -1392,7 +1634,8 @@ class Search {
     // deeper entry remains valuable for move ordering, but returning it here
     // would make a fixed-depth request report a score from another horizon.
     const bool has_exact_transposition =
-        cached != nullptr && cached->depth == depth;
+        cached != nullptr &&
+        (strict_horizon_ ? cached->depth == depth : cached->depth >= depth);
     if (has_exact_transposition) {
       ++transposition_hits_;
       const int cached_score = ScoreFromTable(cached->score, ply);
@@ -1407,8 +1650,9 @@ class Search {
 
     const bool split_root = ply == 0 && root_count_ > 1;
     SearchMoveList moves = GenerateSearchMoves(
-        position, paths, mode_, ply == 0,
-        split_root ? root_index_ : -1, split_root ? root_count_ : 1);
+        *position, paths, mode_, ply == 0,
+        split_root ? root_index_ : -1, split_root ? root_count_ : 1,
+        ply == 0 && IsLeftRightSymmetric(*position));
     OrderMoves(*position, &moves,
                has_exact_transposition ? cached->best_move : kNoMove,
                paths, ply);
@@ -1453,21 +1697,26 @@ class Search {
           continue;
         }
       }
+      const uint8_t original_pawn = position->pawns[position->turn];
+      MakeMove(position, move);
+      std::array<PathResult, 2> child_paths;
+      if (!PrepareChildPaths(*position, move, paths, &child_paths)) {
+        UnmakeMove(position, move, original_pawn);
+        continue;
+      }
       searched_move = true;
       searched_moves[searched_count] = move;
       ++searched_count;
-      const uint8_t original_pawn = position->pawns[position->turn];
-      MakeMove(position, move);
       int next_depth = depth - 1;
       int next_extensions = extensions;
       if (mode_ == SearchMode::kSelective && extensions < kMaximumRaceExtensions &&
-          IsRaceCritical(search_move.child_paths)) {
+          IsRaceCritical(child_paths)) {
         ++next_depth;
         ++next_extensions;
       }
       int score;
       if (searched_count == 1) {
-        score = -Negamax(position, search_move.child_paths, next_depth,
+        score = -Negamax(position, child_paths, next_depth,
                          -beta, -alpha, ply + 1, next_extensions);
       } else {
         int search_depth = next_depth;
@@ -1480,23 +1729,23 @@ class Search {
           if (depth >= 6 && searched_count > 10) reduction = 2;
           const int reduced_depth =
               search_depth > reduction ? search_depth - reduction : 0;
-          score = -Negamax(position, search_move.child_paths,
+          score = -Negamax(position, child_paths,
                            reduced_depth, -alpha - 1, -alpha, ply + 1,
                            next_extensions);
           if (!timed_out_ && score > alpha) {
             ++researches_;
-            score = -Negamax(position, search_move.child_paths,
+            score = -Negamax(position, child_paths,
                              search_depth, -alpha - 1, -alpha, ply + 1,
                              next_extensions);
           }
         } else {
-          score = -Negamax(position, search_move.child_paths,
+          score = -Negamax(position, child_paths,
                            search_depth, -alpha - 1, -alpha, ply + 1,
                            next_extensions);
         }
         if (!timed_out_ && score > alpha && score < beta) {
           ++researches_;
-          score = -Negamax(position, search_move.child_paths,
+          score = -Negamax(position, child_paths,
                            next_depth, -beta, -alpha, ply + 1,
                            next_extensions);
         }
@@ -1565,6 +1814,8 @@ class Search {
   int root_index_;
   int root_count_;
   SearchMode mode_;
+  bool strict_horizon_;
+  bool solve_zero_wall_;
   Clock::time_point started_;
   Clock::time_point last_report_;
   uint64_t nodes_ = 0;
@@ -1574,6 +1825,7 @@ class Search {
   uint64_t reduced_searches_ = 0;
   uint64_t researches_ = 0;
   uint64_t pruned_moves_ = 0;
+  uint64_t exact_endgame_hits_ = 0;
   int sel_depth_ = 0;
   int score_volatility_ = 75;
   uint16_t root_best_move_ = kNoMove;
@@ -1621,12 +1873,21 @@ std::string SnapshotJson(const Position& position) {
 std::string RootMovesJson(Position position) {
   const std::array<PathResult, 2> paths = {ShortestPath(position, 0),
                                            ShortestPath(position, 1)};
-  const SearchMoveList moves = GenerateSearchMoves(&position, paths);
+  const SearchMoveList moves = GenerateSearchMoves(position, paths);
   std::ostringstream output;
   output << "{\"moves\":[";
+  bool first = true;
   for (int index = 0; index < moves.count; ++index) {
-    if (index != 0) output << ',';
-    output << moves.moves[index].move;
+    const uint16_t move = moves.moves[index].move;
+    const uint8_t original_pawn = position.pawns[position.turn];
+    MakeMove(&position, move);
+    std::array<PathResult, 2> child_paths;
+    const bool legal = PrepareChildPaths(position, move, paths, &child_paths);
+    UnmakeMove(&position, move, original_pawn);
+    if (!legal) continue;
+    if (!first) output << ',';
+    first = false;
+    output << move;
   }
   output << "]}";
   return output.str();

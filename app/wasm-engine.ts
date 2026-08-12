@@ -178,7 +178,7 @@ export async function analyzeWasm(
       packed.verticalLow,
       packed.verticalHigh,
       limits.maxDepth,
-      Number.isFinite(limits.timeMs) ? limits.timeMs : -1,
+      Number.isFinite(limits.timeMs) ? limits.timeMs : -2,
     );
     return nativeResult(engineModule.UTF8ToString(engineModule._walwuk_result()));
   } finally {
@@ -211,7 +211,7 @@ export async function analyzeWasmSplit(
       packed.verticalLow,
       packed.verticalHigh,
       limits.maxDepth,
-      Number.isFinite(limits.timeMs) ? limits.timeMs : -1,
+      Number.isFinite(limits.timeMs) ? limits.timeMs : -2,
       rootIndex,
       rootCount,
     );
@@ -246,7 +246,7 @@ export async function analyzeWasmSelectiveSplit(
       packed.verticalLow,
       packed.verticalHigh,
       limits.maxDepth,
-      Number.isFinite(limits.timeMs) ? limits.timeMs : -1,
+      Number.isFinite(limits.timeMs) ? limits.timeMs : -2,
       rootIndex,
       rootCount,
     );

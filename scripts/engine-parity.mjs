@@ -81,6 +81,21 @@ assert.deepEqual(
   "an uncommitted opening should preserve walls and advance the pawn",
 );
 
+const zeroReserveRace = {
+  pawns: [{ r: 2, c: 4 }, { r: 5, c: 4 }],
+  walls: [],
+  wallsLeft: [0, 0],
+  turn: 0,
+};
+const solvedRace = nativeAnalyze(zeroReserveRace, 1);
+assert.deepEqual(
+  solvedRace.bestMove,
+  { kind: "pawn", to: { r: 1, c: 4 } },
+  "the exact zero-reserve solver should preserve the fastest winning move",
+);
+assert.ok(solvedRace.score > 99_000, "the zero-reserve race should be proven");
+assert.ok(solvedRace.exactEndgameHits > 0, "the zero-reserve solver should be used");
+
 const backwardPawnState = {
   pawns: [{ r: 6, c: 4 }, { r: 2, c: 4 }],
   walls: [],

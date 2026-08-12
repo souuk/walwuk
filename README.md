@@ -106,9 +106,11 @@ coordinating web worker
 react interface
 ```
 
-The pool is capped at `floor(0.75 × navigator.hardwareConcurrency)` and twelve workers. It is also limited by known WebAssembly allocations: each isolated worker currently reserves 96 MiB, the fallback engine budget is 256 MiB when device memory is unavailable, and reported memory is discounted because the browser exposes only a coarse estimate. Approximately three quarters of the workers deepen the main selective search while one quarter run the exhaustive verifier. A one-worker device time-slices both lanes and uses a 3:1 active/idle duty cycle.
+The pool is capped at `floor(0.75 × navigator.hardwareConcurrency)` and by known WebAssembly allocations; there is no separate arbitrary worker ceiling. Each isolated worker currently reserves 96 MiB, the fallback engine budget is 256 MiB when device memory is unavailable, and reported memory is discounted because the browser exposes only a coarse estimate. Approximately three quarters of the workers deepen the main selective search while one quarter run the exhaustive verifier. A one-worker device time-slices both lanes and uses a 3:1 active/idle duty cycle.
 
 The main lane searches every legal root move, then uses plausible internal walls, ordering, reductions, and shallow pruning to reach farther. The verifier searches every legal move exhaustively to a shallower but reliable depth. Until same-depth root-score verification is available, any disagreement uses the verifier's move; the deeper main move is accepted when both lanes agree. The console therefore reports **main**, **verified**, and **seldepth** separately rather than implying that the deepest selective iteration is exhaustive.
+
+Wall candidates are generated structurally first. Path and route-existence work is deferred until alpha-beta actually searches a candidate, so cutoffs avoid preparing most possible wall children. Timed production searches may reuse deeper valid transposition bounds, while deterministic parity requests retain strict horizon matching. Exactly symmetric roots search one representative of each left-right pair. Positions that begin with both wall reserves empty use a cached exact retrograde solver for the fixed wall topology.
 
 JavaScript crosses into each WebAssembly instance only when a search starts, when progress is reported, and when the final result is returned. Move generation, pathfinding, evaluation, recursion, pruning, and caching stay inside native code during a search.
 
@@ -493,6 +495,8 @@ npm run engine:test:full
 npm run engine:test:stress
 npm run engine:benchmark
 npm run engine:benchmark:accuracy -- --time-ms 1000 --max-depth 15
+npm run engine:benchmark:matrix
+npm run engine:build:profile
 npm run engine:audit -- --depth 3 --output outputs/root-audit.json
 npm run engine:tournament -- --pairs 6
 npm run lint
@@ -500,7 +504,7 @@ npm run typecheck
 npm run build
 ```
 
-`engine:test:full` compares both exhaustive searches through 3 ply on curated positions, checks movement, every legal wall, ordering, paths, and evaluation on 2,000 deterministic random positions, validates hybrid result metadata, and exercises CPU/memory budgeting. `engine:test:stress` expands the deterministic rule-parity sample to 100,000 positions and is intended for engine releases rather than every edit. `engine:benchmark` reports TypeScript and WebAssembly NPS. `engine:benchmark:accuracy` records depth, seldepth, effective branching factor, cutoffs, reductions, re-searches, pruned moves, and selective/exhaustive disagreement. `engine:audit` exhaustively scores every legal root move and records the selective move's regret. Pass `--output report.json` to retain a machine-readable report. `engine:tournament` runs color-swapped 10- and 15-second matches concurrently, caps concurrency using the same CPU and memory policy, and writes raw plus aggregate reports below `outputs/engine-tournaments/`. `npm run build` creates the GitHub Pages output in `dist-pages`.
+`engine:test:full` compares both exhaustive searches through 3 ply on curated positions, checks movement, every legal wall, ordering, paths, and evaluation on 2,000 deterministic random positions, validates hybrid result metadata, and exercises CPU/memory budgeting. `engine:test:stress` expands the deterministic rule-parity sample to 100,000 positions and is intended for engine releases rather than every edit. `engine:benchmark` reports TypeScript and WebAssembly NPS. `engine:benchmark:accuracy` records depth, seldepth, effective branching factor, cutoffs, reductions, re-searches, pruned moves, and selective/exhaustive disagreement; use `--positions opening,"low reserves"` to select fixtures. `engine:benchmark:matrix` runs the standard 250 ms through 15 second matrix and records environment plus engine hashes. `engine:build:profile` enables diagnostic path, candidate, child-preparation, and TT counters which compile out of production builds. `engine:audit` exhaustively scores every legal root move and records the selective move's regret. Pass `--output report.json` to retain a machine-readable report. `engine:tournament` runs color-swapped 10- and 15-second matches concurrently, caps concurrency using the same CPU and memory policy, and writes raw plus aggregate reports below `outputs/engine-tournaments/`. `npm run build` creates the GitHub Pages output in `dist-pages`.
 
 Offline evaluator data can be generated without changing production behavior:
 
@@ -512,6 +516,7 @@ The generator clamps each label search to 15 seconds. Learned ordering or evalua
 
 The production UI uses the hybrid main/verifier backend. Its selective-search development history, exhaustive comparisons, and color-swapped match harness are documented in [`docs/selective-engine-experiment.md`](docs/selective-engine-experiment.md).
 The first full resource-capped hybrid run is summarized in [`docs/benchmarks/2026-08-11-hybrid.md`](docs/benchmarks/2026-08-11-hybrid.md).
+The retained phase-one maximum-strength changes, measurements, and rejected experiments are summarized in [`docs/benchmarks/2026-08-11-maximum-strength-phase1.md`](docs/benchmarks/2026-08-11-maximum-strength-phase1.md).
 
 For a quicker development check, `npm run engine:test` uses 2 ply and 250 random positions. The worker backend can be selected internally with `VITE_ENGINE_BACKEND=wasm`, `typescript`, or `compare`; production defaults to `wasm`.
 
