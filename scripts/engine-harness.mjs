@@ -8,8 +8,6 @@ import {
   explainMove,
   formatMove,
   generateMoves,
-  isLegalWall,
-  legalPawnMoves,
   moveKey,
   shortestPath,
   staticEvaluation,
@@ -202,17 +200,14 @@ export function nativeSearchRootMove(
 }
 
 export function typescriptSnapshot(state) {
-  const pawnMoves = legalPawnMoves(state).map(moveKey);
-  const moves = generateMoves(state).map(moveKey);
-  const legalWalls = [];
-  for (const orientation of ["h", "v"]) {
-    for (let row = 0; row < 8; ++row) {
-      for (let column = 0; column < 8; ++column) {
-        const wall = { r: row, c: column, o: orientation };
-        if (isLegalWall(state, wall)) legalWalls.push(`${orientation}${row}${column}`);
-      }
-    }
-  }
+  const generatedMoves = generateMoves(state);
+  const pawnMoves = generatedMoves
+    .filter(({ kind }) => kind === "pawn")
+    .map(moveKey);
+  const moves = generatedMoves.map(moveKey);
+  const legalWalls = generatedMoves
+    .filter(({ kind }) => kind === "wall")
+    .map(({ wall }) => `${wall.o}${wall.r}${wall.c}`);
   const evaluation = staticEvaluation(state);
   return {
     distances: [shortestPath(state, 0).distance, shortestPath(state, 1).distance],
@@ -227,25 +222,27 @@ export function typescriptAnalyze(state, maxDepth, timeMs = Infinity) {
   return analyze(state, { maxDepth, timeMs });
 }
 
-export function generateRandomPositions(count) {
-  const positions = [];
+export function* iterateRandomPositions(count, seed = 0x6d2b79f5) {
   let state = structuredClone(INITIAL_STATE);
-  let randomState = 0x6d2b79f5;
+  let randomState = seed >>> 0 || 0x6d2b79f5;
   const random = () => {
     randomState ^= randomState << 13;
     randomState ^= randomState >>> 17;
     randomState ^= randomState << 5;
     return randomState >>> 0;
   };
-  while (positions.length < count) {
+  for (let index = 0; index < count; ++index) {
     if (winner(state) !== null) state = structuredClone(INITIAL_STATE);
     const moves = generateMoves(state);
     if (moves.length === 0) state = structuredClone(INITIAL_STATE);
     else state = applyMove(state, moves[random() % moves.length]);
-    positions.push(structuredClone(state));
+    yield state;
     if ((random() & 31) === 0) state = structuredClone(INITIAL_STATE);
   }
-  return positions;
+}
+
+export function generateRandomPositions(count) {
+  return Array.from(iterateRandomPositions(count));
 }
 
 export function comparableResult(result) {

@@ -20,7 +20,7 @@
     "engine:test": "npm run engine:build && npm run engine:test:compile && node scripts/engine-parity.mjs && node scripts/engine-resource-test.mjs",
     "engine:test:full": "npm run engine:build && npm run engine:test:compile && node scripts/engine-parity.mjs --full && node scripts/engine-resource-test.mjs",
     "engine:test:stress": "npm run engine:build && npm run engine:test:compile && node scripts/engine-parity.mjs --full --random 100000 && node scripts/engine-resource-test.mjs",
-    "engine:test:million": "npm run engine:build && npm run engine:test:compile && node scripts/engine-parity.mjs --full --random 1000000 && node scripts/engine-resource-test.mjs",
+    "engine:test:million": "npm run engine:build && npm run engine:test:compile && node scripts/engine-parity.mjs --full && node scripts/engine-parity-parallel.mjs --random 1000000 && node scripts/engine-resource-test.mjs",
     "engine:benchmark": "npm run engine:build && npm run engine:test:compile && node scripts/engine-benchmark.mjs",
     "engine:benchmark:pool": "npm run engine:build && npm run engine:test:compile && node scripts/engine-pool-benchmark.mjs",
     "engine:benchmark:selective": "npm run engine:build && npm run engine:test:compile && node scripts/engine-selective-benchmark.mjs",

@@ -6,7 +6,7 @@ import {
   explainMove,
   fixtures,
   formatMove,
-  generateRandomPositions,
+  iterateRandomPositions,
   nativeAnalyze,
   nativeAnalyzeSelective,
   nativeAnalyzeSelectiveSplit,
@@ -189,13 +189,17 @@ for (const fixture of fixtures) {
   }
 }
 
-const randomPositions = generateRandomPositions(randomPositionCount);
-for (let index = 0; index < randomPositions.length; ++index) {
+let randomIndex = 0;
+for (const position of iterateRandomPositions(randomPositionCount)) {
   assert.deepEqual(
-    nativeSnapshot(randomPositions[index]),
-    typescriptSnapshot(randomPositions[index]),
-    `random position ${index}: rules snapshot differs`,
+    nativeSnapshot(position),
+    typescriptSnapshot(position),
+    `random position ${randomIndex}: rules snapshot differs`,
   );
+  ++randomIndex;
+  if (randomPositionCount >= 100_000 && randomIndex % 100_000 === 0) {
+    console.log(`parity progress: ${randomIndex}/${randomPositionCount}`);
+  }
 }
 
 for (const fixture of fixtures.filter(({ name }) =>

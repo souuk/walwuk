@@ -26,6 +26,11 @@ evaluation, or full 9×9 solving is complete.
 
 - Native/TypeScript parity passed on all 10 curated fixtures through three
   plies and on 2,000 deterministic random legal positions.
+- The release-scale rule, move, wall-legality, path, and evaluation gate passed
+  on 1,000,000 additional deterministic random positions with zero mismatch.
+  It used eight 125,000-position shards: the reported 16 processors permitted
+  twelve workers, while the conservative 1.5 GiB known-memory budget limited
+  the run to eight. Wall time was 408 seconds.
 - The zero-reserve solver returns a legal fastest winning move in its targeted
   fixture and never supplies a root score without a playable move.
 - Split-root and full-root fixed-depth scores remain equal.
@@ -91,11 +96,15 @@ position, 1,577,234 candidates produced only 102,860 prepared children.
 - Invoking the zero-wall retrograde solver for every topology reached during a
   low-reserve search caused severe one-off construction costs. It is therefore
   enabled only when analysis begins with both reserves already empty.
+- Canonicalizing every transposition-table probe through a mirrored wall mask
+  gained cache hits in some positions but no completed depth. Median selective
+  NPS fell about 5%, and exhaustive throughput also regressed. Exact symmetric
+  root reduction remains, but per-node mirrored TT canonicalization was removed.
 
 ## Remaining program
 
-Persistent cancellable worker pools, dynamic root work stealing, full TT
-symmetry canonicalization, tuned strategic evaluation, low-wall proof solvers,
+Persistent cancellable worker pools, dynamic root work stealing, a cheaper
+symmetry-cache design, tuned strategic evaluation, low-wall proof solvers,
 policy training, NNUE-style evaluation, PGO, and the full statistical promotion
 ladder remain separate phases. Each must pass fixed-depth parity and paired
 self-play before production promotion.

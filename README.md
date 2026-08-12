@@ -493,6 +493,7 @@ Run all checks before opening a pull request:
 ```bash
 npm run engine:test:full
 npm run engine:test:stress
+npm run engine:test:million
 npm run engine:benchmark
 npm run engine:benchmark:accuracy -- --time-ms 1000 --max-depth 15
 npm run engine:benchmark:matrix
@@ -504,7 +505,7 @@ npm run typecheck
 npm run build
 ```
 
-`engine:test:full` compares both exhaustive searches through 3 ply on curated positions, checks movement, every legal wall, ordering, paths, and evaluation on 2,000 deterministic random positions, validates hybrid result metadata, and exercises CPU/memory budgeting. `engine:test:stress` expands the deterministic rule-parity sample to 100,000 positions and is intended for engine releases rather than every edit. `engine:benchmark` reports TypeScript and WebAssembly NPS. `engine:benchmark:accuracy` records depth, seldepth, effective branching factor, cutoffs, reductions, re-searches, pruned moves, and selective/exhaustive disagreement; use `--positions opening,"low reserves"` to select fixtures. `engine:benchmark:matrix` runs the standard 250 ms through 15 second matrix and records environment plus engine hashes. `engine:build:profile` enables diagnostic path, candidate, child-preparation, and TT counters which compile out of production builds. `engine:audit` exhaustively scores every legal root move and records the selective move's regret. Pass `--output report.json` to retain a machine-readable report. `engine:tournament` runs color-swapped 10- and 15-second matches concurrently, caps concurrency using the same CPU and memory policy, and writes raw plus aggregate reports below `outputs/engine-tournaments/`. `npm run build` creates the GitHub Pages output in `dist-pages`.
+`engine:test:full` compares both exhaustive searches through 3 ply on curated positions, checks movement, every legal wall, ordering, paths, and evaluation on 2,000 deterministic random positions, validates hybrid result metadata, and exercises CPU/memory budgeting. `engine:test:stress` expands the deterministic rule-parity sample to 100,000 positions. `engine:test:million` is the release gate: it streams one million comparisons through deterministic independent shards while capping concurrency at 75% of reported processors and the conservative known-memory limit. `engine:benchmark` reports TypeScript and WebAssembly NPS. `engine:benchmark:accuracy` records depth, seldepth, effective branching factor, cutoffs, reductions, re-searches, pruned moves, and selective/exhaustive disagreement; use `--positions opening,"low reserves"` to select fixtures. `engine:benchmark:matrix` runs the standard 250 ms through 15 second matrix and records environment plus engine hashes. `engine:build:profile` enables diagnostic path, candidate, child-preparation, and TT counters which compile out of production builds. `engine:audit` exhaustively scores every legal root move and records the selective move's regret. Pass `--output report.json` to retain a machine-readable report. `engine:tournament` runs color-swapped 10- and 15-second matches concurrently, caps concurrency using the same CPU and memory policy, and writes raw plus aggregate reports below `outputs/engine-tournaments/`. `npm run build` creates the GitHub Pages output in `dist-pages`.
 
 Offline evaluator data can be generated without changing production behavior:
 
