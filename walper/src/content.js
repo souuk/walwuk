@@ -372,7 +372,10 @@
     setField("best", globalThis.WalperCore.formatMove(result.bestMove, currentScan?.flipped));
     setField("winning", globalThis.WalperCore.formatEvaluation(result, currentState));
     setField("nodes", Number(result.nodes || 0).toLocaleString());
-    setField("depth", `${result.depth} ply`);
+    setField(
+      "depth",
+      `m ${result.selectiveDepth ?? result.depth ?? 0} · v ${result.verifiedDepth ?? 0} ply`,
+    );
     setField("speed", `${Number(result.nps || 0).toLocaleString()} nps`);
     drawSuggestion(result.bestMove);
   }

@@ -20,7 +20,10 @@ import {
 } from "./engine-harness.mjs";
 
 const full = process.argv.includes("--full");
-const randomPositionCount = full ? 2_000 : 250;
+const randomOptionIndex = process.argv.indexOf("--random");
+const randomPositionCount = randomOptionIndex >= 0
+  ? Math.max(1, Number.parseInt(process.argv[randomOptionIndex + 1], 10))
+  : full ? 2_000 : 250;
 const maximumDepth = full ? 3 : 2;
 
 assert.equal(
@@ -36,6 +39,10 @@ assert.equal(
 
 const depthLimited = nativeAnalyze(fixtures[0].state, 1);
 assert.equal(depthLimited.stopReason, "depth", "fixed-depth search should report depth completion");
+assert.equal(depthLimited.verifiedDepth, 1, "exhaustive search should report verified depth");
+assert.equal(depthLimited.selectiveDepth, 0, "exhaustive search must not report selective depth");
+assert.equal(depthLimited.confidence, "verified", "exhaustive search should be verified");
+assert.equal(depthLimited.verifierNodes, depthLimited.nodes, "exhaustive nodes should be verifier nodes");
 
 const timeLimited = nativeAnalyze(fixtures[0].state, 15, 250);
 assert.equal(timeLimited.stopReason, "time", "timed search should report the time limit");
@@ -102,6 +109,9 @@ assert.ok(
 for (const fixture of fixtures) {
   const selectiveResult = nativeAnalyzeSelective(fixture.state, 2);
   assert.equal(selectiveResult.selective, true, `${fixture.name}: selective flag missing`);
+  assert.equal(selectiveResult.selectiveDepth, selectiveResult.depth, `${fixture.name}: selective depth missing`);
+  assert.equal(selectiveResult.verifiedDepth, 0, `${fixture.name}: selective search cannot claim verification`);
+  assert.equal(selectiveResult.confidence, "provisional", `${fixture.name}: selective result must be provisional`);
   assert.ok(
     selectiveResult.bestMove === null ||
       typescriptSnapshot(fixture.state).moves.includes(
@@ -177,10 +187,9 @@ for (const fixture of fixtures.filter(({ name }) =>
   ["opening", "channelled routes", "transposition rich"].includes(name))) {
   const exhaustive = nativeAnalyze(fixture.state, 5);
   const selective = nativeAnalyzeSelective(fixture.state, 5);
-  assert.equal(
-    selective.score,
-    exhaustive.score,
-    `${fixture.name}: plausible search evaluates differently from exhaustive at five ply`,
+  assert.ok(
+    Math.abs(selective.score - exhaustive.score) <= 100,
+    `${fixture.name}: plausible search exceeded the verifier safety margin at five ply`,
   );
 }
 

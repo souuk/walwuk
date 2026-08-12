@@ -56,6 +56,28 @@ type ProgressGlobal = typeof globalThis & {
   __walwukProgress?: (json: string) => void;
 };
 
+function nativeResult(json: string): AnalysisResult {
+  const result = JSON.parse(json) as AnalysisResult;
+  return {
+    ...result,
+    selectiveDepth: result.selectiveDepth ?? (result.selective ? result.depth : 0),
+    verifiedDepth: result.verifiedDepth ?? (result.selective ? 0 : result.depth),
+    selDepth: result.selDepth ?? result.depth,
+    verifierNodes: result.verifierNodes ?? (result.selective ? 0 : result.nodes),
+    leafNodes: result.leafNodes ?? 0,
+    cutoffs: result.cutoffs ?? 0,
+    reducedSearches: result.reducedSearches ?? 0,
+    researches: result.researches ?? 0,
+    prunedMoves: result.prunedMoves ?? 0,
+    confidence: result.confidence ?? (result.selective ? "provisional" : "verified"),
+    resourceUsage: result.resourceUsage ?? {
+      searchWorkers: 1,
+      wasmMemoryBytes: 96 * 1024 * 1024,
+      assetMemoryBytes: 0,
+    },
+  };
+}
+
 export interface PackedPosition {
   pawnZero: number;
   pawnOne: number;
@@ -142,7 +164,7 @@ export async function analyzeWasm(
   const packed = packPosition(state);
   const progressGlobal = globalThis as ProgressGlobal;
   progressGlobal.__walwukProgress = (json) => {
-    onProgress?.(JSON.parse(json) as AnalysisResult);
+    onProgress?.(nativeResult(json));
   };
   try {
     engineModule._walwuk_analyze(
@@ -158,7 +180,7 @@ export async function analyzeWasm(
       limits.maxDepth,
       Number.isFinite(limits.timeMs) ? limits.timeMs : -1,
     );
-    return JSON.parse(engineModule.UTF8ToString(engineModule._walwuk_result())) as AnalysisResult;
+    return nativeResult(engineModule.UTF8ToString(engineModule._walwuk_result()));
   } finally {
     delete progressGlobal.__walwukProgress;
   }
@@ -175,7 +197,7 @@ export async function analyzeWasmSplit(
   const packed = packPosition(state);
   const progressGlobal = globalThis as ProgressGlobal;
   progressGlobal.__walwukProgress = (json) => {
-    onProgress?.(JSON.parse(json) as AnalysisResult);
+    onProgress?.(nativeResult(json));
   };
   try {
     engineModule._walwuk_analyze_split(
@@ -193,7 +215,7 @@ export async function analyzeWasmSplit(
       rootIndex,
       rootCount,
     );
-    return JSON.parse(engineModule.UTF8ToString(engineModule._walwuk_result())) as AnalysisResult;
+    return nativeResult(engineModule.UTF8ToString(engineModule._walwuk_result()));
   } finally {
     delete progressGlobal.__walwukProgress;
   }
@@ -210,7 +232,7 @@ export async function analyzeWasmSelectiveSplit(
   const packed = packPosition(state);
   const progressGlobal = globalThis as ProgressGlobal;
   progressGlobal.__walwukProgress = (json) => {
-    onProgress?.(JSON.parse(json) as AnalysisResult);
+    onProgress?.(nativeResult(json));
   };
   try {
     engineModule._walwuk_analyze_selective_split(
@@ -228,7 +250,7 @@ export async function analyzeWasmSelectiveSplit(
       rootIndex,
       rootCount,
     );
-    return JSON.parse(engineModule.UTF8ToString(engineModule._walwuk_result())) as AnalysisResult;
+    return nativeResult(engineModule.UTF8ToString(engineModule._walwuk_result()));
   } finally {
     delete progressGlobal.__walwukProgress;
   }

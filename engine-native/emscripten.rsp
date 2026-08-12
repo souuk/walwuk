@@ -5,6 +5,7 @@ engine-native/walwuk_engine.cpp
 -Wpedantic
 -Werror
 -O3
+-msimd128
 -flto
 -DNDEBUG
 -fno-exceptions

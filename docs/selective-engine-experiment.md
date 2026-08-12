@@ -1,6 +1,8 @@
 # Selective engine experiment
 
-walwuk keeps its exhaustive engine as the correctness baseline and fallback. After the comparisons documented here, the plausible selective search became the production WebAssembly backend so the interface can reach greater depth within the same time.
+walwuk keeps its exhaustive engine as the correctness baseline and fallback. The comparisons below explain the plausible search that originally became the production backend. Production now runs that search as the **main lane** beside a shallower exhaustive **verifier lane**. The main lane provides depth; until same-depth root-score verification is available, any move disagreement is resolved in favor of the verifier.
+
+Every legal root move is now retained in both lanes. Selective wall filtering applies only below the root. Worker count is capped at 75% of reported logical processors and by a conservative WebAssembly memory budget.
 
 ## Search differences
 
@@ -25,6 +27,29 @@ Build and run color-swapped games with:
 ```bash
 npm run engine:match -- --games 8 --move-ms 250 --max-plies 100
 ```
+
+The short match is a fast regression screen. Competitive testing uses a
+10-second normal allowance and a 15-second hard ceiling, reflecting a roughly
+40-move game played with a three-minute clock and one-second increment:
+
+```bash
+npm run engine:match:competitive -- --games 8
+npm run engine:match:long -- --games 8
+npm run engine:tournament -- --pairs 6
+```
+
+Searches finish before the allowance when every requested depth is complete.
+Promotion decisions compare decision quality, verified depth, and time-to-depth
+in addition to NPS.
+The tournament command runs the 10- and 15-second color-swapped suites in
+parallel. It caps concurrent engine processes at 75% of reported logical
+processors and at a conservative 50% memory budget, then preserves every raw
+match and an aggregate summary under `outputs/engine-tournaments/`.
+An interrupted or still-growing result directory can be summarized again with
+`npm run engine:tournament -- --summary-only --output <result-directory>`.
+
+The first completed hybrid baseline is recorded in
+[`docs/benchmarks/2026-08-11-hybrid.md`](benchmarks/2026-08-11-hybrid.md).
 
 `--move-ms` is clamped to at most 15,000 ms. Requests of five seconds or more reserve a 100 ms guard for call overhead, so a five-second wall-clock limit supplies 4,900 ms of native search. Games start in matched pairs: both games use the same deterministic opening, and the engines exchange colors. A game that has not ended by `--max-plies` is reported as unresolved rather than treated as a draw.
 

@@ -2,6 +2,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -23,6 +24,7 @@ constexpr int kTranspositionClusterSize = 4;
 constexpr int kMaximumSearchPly = 64;
 constexpr int kMoveHistorySize = 81 + 128;
 constexpr int kMaximumRaceExtensions = 2;
+constexpr uint64_t kHashSeed = 0x6a09e667f3bcc909ULL;
 
 // The first few remaining walls are much more valuable than the last few.
 // This prevents a short horizon from treating a stockpile of ten walls as
@@ -126,7 +128,85 @@ struct Position {
   Bits81 blocked_down;
   Bits81 blocked_left;
   Bits81 blocked_right;
+  uint64_t key = 0;
 };
+
+uint64_t NextHashRandom(uint64_t* state) {
+  *state += 0x9e3779b97f4a7c15ULL;
+  uint64_t value = *state;
+  value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
+  value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
+  return value ^ (value >> 31);
+}
+
+struct ZobristKeys {
+  std::array<std::array<uint64_t, kSquareCount>, 2> pawns{};
+  std::array<std::array<uint64_t, 64>, 2> walls{};
+  std::array<std::array<uint64_t, 11>, 2> reserves{};
+  uint64_t turn = 0;
+};
+
+ZobristKeys MakeZobristKeys() {
+  ZobristKeys keys;
+  uint64_t state = kHashSeed;
+  for (auto& player : keys.pawns) {
+    for (uint64_t& key : player) key = NextHashRandom(&state);
+  }
+  for (auto& orientation : keys.walls) {
+    for (uint64_t& key : orientation) key = NextHashRandom(&state);
+  }
+  for (auto& player : keys.reserves) {
+    for (uint64_t& key : player) key = NextHashRandom(&state);
+  }
+  keys.turn = NextHashRandom(&state);
+  return keys;
+}
+
+const ZobristKeys kZobrist = MakeZobristKeys();
+
+uint64_t ComputePositionKey(const Position& position) {
+  uint64_t key = kZobrist.pawns[0][position.pawns[0]] ^
+                 kZobrist.pawns[1][position.pawns[1]] ^
+                 kZobrist.reserves[0][position.walls_left[0]] ^
+                 kZobrist.reserves[1][position.walls_left[1]];
+  if (position.turn != 0) key ^= kZobrist.turn;
+  for (int id = 0; id < 64; ++id) {
+    if (((position.horizontal_walls >> id) & 1U) != 0) {
+      key ^= kZobrist.walls[0][id];
+    }
+    if (((position.vertical_walls >> id) & 1U) != 0) {
+      key ^= kZobrist.walls[1][id];
+    }
+  }
+  return key;
+}
+
+struct WallConflictMasks {
+  std::array<std::array<uint64_t, 64>, 2> same_orientation{};
+};
+
+WallConflictMasks MakeWallConflictMasks() {
+  WallConflictMasks masks;
+  for (int orientation = 0; orientation < 2; ++orientation) {
+    for (int row = 0; row < 8; ++row) {
+      for (int column = 0; column < 8; ++column) {
+        const int id = row * 8 + column;
+        uint64_t conflicts = uint64_t{1} << id;
+        if (orientation == 0) {
+          if (column > 0) conflicts |= uint64_t{1} << (id - 1);
+          if (column < 7) conflicts |= uint64_t{1} << (id + 1);
+        } else {
+          if (row > 0) conflicts |= uint64_t{1} << (id - 8);
+          if (row < 7) conflicts |= uint64_t{1} << (id + 8);
+        }
+        masks.same_orientation[orientation][id] = conflicts;
+      }
+    }
+  }
+  return masks;
+}
+
+const WallConflictMasks kWallConflicts = MakeWallConflictMasks();
 
 struct PathResult {
   int distance = 99;
@@ -182,10 +262,19 @@ struct AnalysisResult {
   uint16_t best_move = kNoMove;
   int score = 0;
   int depth = 0;
+  int selective_depth = 0;
+  int verified_depth = 0;
+  int sel_depth = 0;
   int pv_length = 0;
   std::array<uint16_t, kMaximumPvLength> pv{};
   uint64_t nodes = 0;
   uint64_t transposition_hits = 0;
+  uint64_t verifier_nodes = 0;
+  uint64_t leaf_nodes = 0;
+  uint64_t cutoffs = 0;
+  uint64_t reduced_searches = 0;
+  uint64_t researches = 0;
+  uint64_t pruned_moves = 0;
   int nps = 0;
   int time_ms = 0;
   const char* stop_reason = "depth";
@@ -256,19 +345,8 @@ uint32_t PositionMetadata(const Position& position) {
          (static_cast<uint32_t>(position.walls_left[1]) << 19);
 }
 
-uint64_t MixHash(uint64_t value) {
-  value ^= value >> 30;
-  value *= 0xbf58476d1ce4e5b9ULL;
-  value ^= value >> 27;
-  value *= 0x94d049bb133111ebULL;
-  return value ^ (value >> 31);
-}
-
 std::size_t PositionIndex(const Position& position) {
-  uint64_t hash = MixHash(position.horizontal_walls);
-  hash ^= MixHash(position.vertical_walls + 0x9e3779b97f4a7c15ULL);
-  hash ^= MixHash(PositionMetadata(position) + 0x243f6a8885a308d3ULL);
-  return static_cast<std::size_t>(hash) &
+  return static_cast<std::size_t>(position.key) &
          (kTranspositionClusterCount - 1);
 }
 
@@ -296,6 +374,7 @@ int ScoreFromTable(int score, int ply) {
 void AddWallUnchecked(Position* position, int row, int column,
                       bool vertical) {
   const int wall_id = row * 8 + column;
+  position->key ^= kZobrist.walls[vertical ? 1 : 0][wall_id];
   if (vertical) {
     position->vertical_walls |= uint64_t{1} << wall_id;
     for (int blocked_row = row; blocked_row <= row + 1; ++blocked_row) {
@@ -317,6 +396,7 @@ void AddWallUnchecked(Position* position, int row, int column,
 void RemoveWallUnchecked(Position* position, int row, int column,
                          bool vertical) {
   const int wall_id = row * 8 + column;
+  position->key ^= kZobrist.walls[vertical ? 1 : 0][wall_id];
   if (vertical) {
     position->vertical_walls &= ~(uint64_t{1} << wall_id);
     for (int blocked_row = row; blocked_row <= row + 1; ++blocked_row) {
@@ -357,6 +437,7 @@ Position BuildPosition(int pawn_zero, int pawn_one, int walls_zero,
       AddWallUnchecked(&position, id / 8, id % 8, true);
     }
   }
+  position.key = ComputePositionKey(position);
   return position;
 }
 
@@ -407,7 +488,8 @@ void AddBlockingWallCandidates(int first, int second, PathResult* result) {
   }
 }
 
-PathResult ShortestPath(const Position& position, int player) {
+PathResult ShortestPath(const Position& position, int player,
+                        bool all_shortest_paths = false) {
   const Bits81 target = player == 0 ? kTopRow : kBottomRow;
   std::array<Bits81, kSquareCount> layers{};
   Bits81 frontier = SquareBit(position.pawns[player]);
@@ -418,13 +500,32 @@ PathResult ShortestPath(const Position& position, int player) {
     if (Any(reached)) {
       PathResult result;
       result.distance = distance;
-      int current = FirstSquare(reached);
+      if (!all_shortest_paths) {
+        int current = FirstSquare(reached);
+        for (int layer = distance; layer > 0; --layer) {
+          const Bits81 predecessors =
+              Expand(position, SquareBit(current)) & layers[layer - 1];
+          const int predecessor = FirstSquare(predecessors);
+          AddBlockingWallCandidates(predecessor, current, &result);
+          current = predecessor;
+        }
+        return result;
+      }
+      Bits81 next_layer = reached;
       for (int layer = distance; layer > 0; --layer) {
-        const Bits81 predecessors = Expand(position, SquareBit(current)) &
-                                    layers[layer - 1];
-        const int predecessor = FirstSquare(predecessors);
-        AddBlockingWallCandidates(predecessor, current, &result);
-        current = predecessor;
+        Bits81 predecessors = Expand(position, next_layer) & layers[layer - 1];
+        Bits81 remaining_predecessors = predecessors;
+        while (Any(remaining_predecessors)) {
+          const int predecessor = FirstSquare(remaining_predecessors);
+          remaining_predecessors.Clear(predecessor);
+          Bits81 successors = Expand(position, SquareBit(predecessor)) & next_layer;
+          while (Any(successors)) {
+            const int successor = FirstSquare(successors);
+            successors.Clear(successor);
+            AddBlockingWallCandidates(predecessor, successor, &result);
+          }
+        }
+        next_layer = predecessors;
       }
       return result;
     }
@@ -433,6 +534,19 @@ PathResult ShortestPath(const Position& position, int player) {
     visited = visited | frontier;
   }
   return {};
+}
+
+int ShortestDistance(const Position& position, int player) {
+  const Bits81 target = player == 0 ? kTopRow : kBottomRow;
+  Bits81 frontier = SquareBit(position.pawns[player]);
+  Bits81 visited = frontier;
+  for (int distance = 0; distance < kSquareCount; ++distance) {
+    if (Any(frontier & target)) return distance;
+    frontier = Without(Expand(position, frontier), visited);
+    if (!Any(frontier)) break;
+    visited = visited | frontier;
+  }
+  return 99;
 }
 
 MoveList LegalPawnMoves(const Position& position, int player) {
@@ -500,16 +614,9 @@ bool IsStructurallyLegalWall(const Position& position, int row, int column,
       vertical ? position.vertical_walls : position.horizontal_walls;
   const uint64_t crossing_walls =
       vertical ? position.horizontal_walls : position.vertical_walls;
-  if (((own_walls >> id) & 1U) != 0 ||
-      ((crossing_walls >> id) & 1U) != 0) {
-    return false;
-  }
-  if (vertical) {
-    return (row == 0 || ((own_walls >> (id - 8)) & 1U) == 0) &&
-           (row == 7 || ((own_walls >> (id + 8)) & 1U) == 0);
-  }
-  return (column == 0 || ((own_walls >> (id - 1)) & 1U) == 0) &&
-         (column == 7 || ((own_walls >> (id + 1)) & 1U) == 0);
+  const int orientation = vertical ? 1 : 0;
+  return (crossing_walls & (uint64_t{1} << id)) == 0 &&
+         (own_walls & kWallConflicts.same_orientation[orientation][id]) == 0;
 }
 
 bool IsLegalWall(const Position& position, int row, int column,
@@ -517,8 +624,8 @@ bool IsLegalWall(const Position& position, int row, int column,
   if (!IsStructurallyLegalWall(position, row, column, vertical)) return false;
   Position trial = position;
   AddWallUnchecked(&trial, row, column, vertical);
-  return ShortestPath(trial, 0).distance < 99 &&
-         ShortestPath(trial, 1).distance < 99;
+  return ShortestDistance(trial, 0) < 99 &&
+         ShortestDistance(trial, 1) < 99;
 }
 
 bool WallTouchesWitness(const PathResult& path, int id, bool vertical) {
@@ -550,13 +657,19 @@ bool IsSelectiveWallCandidate(
 
 SearchMoveList GenerateSearchMoves(
     Position* position, const std::array<PathResult, 2>& paths,
-    SearchMode mode = SearchMode::kExhaustive) {
+    SearchMode mode = SearchMode::kExhaustive,
+    bool include_all_root_walls = false, int partition_index = -1,
+    int partition_count = 1) {
   SearchMoveList result;
   const int player = position->turn;
   const MoveList pawn_moves = LegalPawnMoves(*position, player);
   const uint8_t original_pawn = position->pawns[player];
   for (int index = 0; index < pawn_moves.count; ++index) {
     const uint16_t move = pawn_moves.moves[index];
+    if (partition_index >= 0 &&
+        static_cast<int>(move % partition_count) != partition_index) {
+      continue;
+    }
     position->pawns[player] = static_cast<uint8_t>(MoveSquare(move));
     std::array<PathResult, 2> child_paths = paths;
     child_paths[player] = ShortestPath(*position, player);
@@ -573,8 +686,14 @@ SearchMoveList GenerateSearchMoves(
           continue;
         }
         const int id = row * 8 + column;
-        if (mode == SearchMode::kSelective &&
+        if (mode == SearchMode::kSelective && !include_all_root_walls &&
             !IsSelectiveWallCandidate(*position, paths, id, vertical)) {
+          continue;
+        }
+        const uint16_t packed_move = PackWallMove(row, column, vertical);
+        if (partition_index >= 0 &&
+            static_cast<int>(packed_move % partition_count) !=
+                partition_index) {
           continue;
         }
         AddWallUnchecked(position, row, column, vertical);
@@ -591,7 +710,7 @@ SearchMoveList GenerateSearchMoves(
         }
         RemoveWallUnchecked(position, row, column, vertical);
         if (legal) {
-          result.Push(PackWallMove(row, column, vertical), child_paths);
+          result.Push(packed_move, child_paths);
         }
       }
     }
@@ -627,16 +746,11 @@ MoveList GenerateMoves(const Position& position, const PathResult& current,
   return result;
 }
 
+void MakeMove(Position* position, uint16_t move);
+
 Position ApplyMove(const Position& position, uint16_t move) {
   Position next = position;
-  if (IsWallMove(move)) {
-    const int id = WallId(move);
-    AddWallUnchecked(&next, id / 8, id % 8, IsVerticalWall(move));
-    --next.walls_left[position.turn];
-  } else {
-    next.pawns[position.turn] = static_cast<uint8_t>(MoveSquare(move));
-  }
-  next.turn = 1 - position.turn;
+  MakeMove(&next, move);
   return next;
 }
 
@@ -645,22 +759,32 @@ void MakeMove(Position* position, uint16_t move) {
   if (IsWallMove(move)) {
     const int id = WallId(move);
     AddWallUnchecked(position, id / 8, id % 8, IsVerticalWall(move));
+    position->key ^= kZobrist.reserves[player][position->walls_left[player]];
     --position->walls_left[player];
+    position->key ^= kZobrist.reserves[player][position->walls_left[player]];
   } else {
+    position->key ^= kZobrist.pawns[player][position->pawns[player]];
     position->pawns[player] = static_cast<uint8_t>(MoveSquare(move));
+    position->key ^= kZobrist.pawns[player][position->pawns[player]];
   }
+  position->key ^= kZobrist.turn;
   position->turn = static_cast<uint8_t>(1 - player);
 }
 
 void UnmakeMove(Position* position, uint16_t move, uint8_t original_pawn) {
+  position->key ^= kZobrist.turn;
   position->turn = static_cast<uint8_t>(1 - position->turn);
   const int player = position->turn;
   if (IsWallMove(move)) {
     const int id = WallId(move);
     RemoveWallUnchecked(position, id / 8, id % 8, IsVerticalWall(move));
+    position->key ^= kZobrist.reserves[player][position->walls_left[player]];
     ++position->walls_left[player];
+    position->key ^= kZobrist.reserves[player][position->walls_left[player]];
   } else {
+    position->key ^= kZobrist.pawns[player][position->pawns[player]];
     position->pawns[player] = original_pawn;
+    position->key ^= kZobrist.pawns[player][position->pawns[player]];
   }
 }
 
@@ -673,8 +797,8 @@ int Winner(const Position& position) {
 int StaticEvaluation(const Position& position) {
   const int winner = Winner(position);
   if (winner != -1) return winner == position.turn ? kWin : -kWin;
-  const int periwinkle = ShortestPath(position, 0).distance;
-  const int blossom = ShortestPath(position, 1).distance;
+  const int periwinkle = ShortestDistance(position, 0);
+  const int blossom = ShortestDistance(position, 1);
   const int path_score = (blossom - periwinkle) * 100;
   const int wall_score = WallReserveValue(position.walls_left[0]) -
                          WallReserveValue(position.walls_left[1]);
@@ -733,15 +857,27 @@ std::string ResultJson(const AnalysisResult& result) {
   std::ostringstream output;
   output << "{\"bestMove\":" << MoveJson(result.best_move)
          << ",\"score\":" << result.score << ",\"depth\":" << result.depth
+         << ",\"selectiveDepth\":" << result.selective_depth
+         << ",\"verifiedDepth\":" << result.verified_depth
+         << ",\"selDepth\":" << result.sel_depth
          << ",\"pv\":[";
   for (int index = 0; index < result.pv_length; ++index) {
     if (index != 0) output << ',';
     output << MoveJson(result.pv[index]);
   }
-  output << "],\"nodes\":" << result.nodes << ",\"nps\":" << result.nps
+  output << "],\"nodes\":" << result.nodes
+         << ",\"verifierNodes\":" << result.verifier_nodes
+         << ",\"nps\":" << result.nps
          << ",\"timeMs\":" << result.time_ms << ",\"ttHits\":"
          << result.transposition_hits
+         << ",\"leafNodes\":" << result.leaf_nodes
+         << ",\"cutoffs\":" << result.cutoffs
+         << ",\"reducedSearches\":" << result.reduced_searches
+         << ",\"researches\":" << result.researches
+         << ",\"prunedMoves\":" << result.pruned_moves
          << ",\"selective\":" << (result.selective ? "true" : "false")
+         << ",\"confidence\":\""
+         << (result.verified_depth > 0 ? "verified" : "provisional") << "\""
          << ",\"stopReason\":\""
          << result.stop_reason << "\",\"bound\":\""
          << result.score_bound << "\",\"backend\":\"wasm\"}";
@@ -780,19 +916,22 @@ class Search {
       int alpha = -kInfinity;
       int beta = kInfinity;
       if (depth > 2) {
-        alpha = completed_.score - 175;
-        beta = completed_.score + 175;
+        const int margin = std::clamp(100 + score_volatility_, 100, 400);
+        alpha = completed_.score - margin;
+        beta = completed_.score + margin;
       }
       root_best_move_ = kNoMove;
       int score =
           Negamax(&initial_, root_paths, depth, alpha, beta, 0, 0);
       if (timed_out_) break;
       if (score <= alpha || score >= beta) {
+        ++researches_;
         score = Negamax(&initial_, root_paths, depth, -kInfinity, kInfinity,
                         0, 0);
         if (timed_out_) break;
       }
 
+      score_volatility_ = std::abs(score - completed_.score);
       completed_.score = score;
       completed_.depth = depth;
       ExtractPrincipalVariation(depth);
@@ -818,7 +957,7 @@ class Search {
     completed_.pv_length = 1;
 
     Position root = initial_;
-    SearchMoveList moves = GenerateSearchMoves(&root, root_paths, mode_);
+    SearchMoveList moves = GenerateSearchMoves(&root, root_paths, mode_, true);
     const SearchMove* selected = nullptr;
     for (int index = 0; index < moves.count; ++index) {
       if (moves.moves[index].move == root_move) {
@@ -891,13 +1030,24 @@ class Search {
         std::chrono::duration<double, std::milli>(Clock::now() - started_)
             .count();
     result->nodes = nodes_;
+    result->verifier_nodes = mode_ == SearchMode::kExhaustive ? nodes_ : 0;
     result->transposition_hits = transposition_hits_;
+    result->leaf_nodes = leaf_nodes_;
+    result->cutoffs = cutoffs_;
+    result->reduced_searches = reduced_searches_;
+    result->researches = researches_;
+    result->pruned_moves = pruned_moves_;
+    result->selective_depth =
+        mode_ == SearchMode::kSelective ? result->depth : 0;
+    result->verified_depth =
+        mode_ == SearchMode::kExhaustive ? result->depth : 0;
+    result->sel_depth = sel_depth_;
     result->time_ms = static_cast<int>(elapsed + 0.5);
     result->nps = static_cast<int>(nodes_ * 1000.0 / (elapsed < 1 ? 1 : elapsed));
   }
 
   void CheckTime() {
-    if ((nodes_ & 255U) != 0) return;
+    if ((nodes_ & 2047U) != 0) return;
     const Clock::time_point now = Clock::now();
     if (std::chrono::duration<double, std::milli>(now - last_report_).count() >=
         1000.0) {
@@ -1036,9 +1186,15 @@ class Search {
     killers_[ply][0] = move;
   }
 
+  void RecordFailedMove(int player, uint16_t move, int depth) {
+    int& history = history_[player][MoveHistoryIndex(move)];
+    history = std::max(-32'000, history - depth * depth);
+  }
+
   int Negamax(Position* position, const std::array<PathResult, 2>& paths,
               int depth, int alpha, int beta, int ply, int extensions) {
     ++nodes_;
+    sel_depth_ = std::max(sel_depth_, ply);
     CheckTime();
     if (timed_out_) return 0;
     const int winner = Winner(*position);
@@ -1048,7 +1204,10 @@ class Search {
     alpha = std::max(alpha, -kWin + ply);
     beta = std::min(beta, kWin - ply);
     if (alpha >= beta) return alpha;
-    if (depth <= 0) return StaticEvaluation(*position, paths);
+    if (depth <= 0) {
+      ++leaf_nodes_;
+      return StaticEvaluation(*position, paths);
+    }
 
     // A race extension changes the remaining selective horizon. Keep those
     // nodes out of the regular TT so an entry searched with fewer extensions
@@ -1077,7 +1236,10 @@ class Search {
       if (alpha >= beta) return cached_score;
     }
 
-    SearchMoveList moves = GenerateSearchMoves(position, paths, mode_);
+    const bool split_root = ply == 0 && root_count_ > 1;
+    SearchMoveList moves = GenerateSearchMoves(
+        position, paths, mode_, ply == 0,
+        split_root ? root_index_ : -1, split_root ? root_count_ : 1);
     OrderMoves(*position, &moves,
                has_exact_transposition ? cached->best_move : kNoMove,
                paths, ply);
@@ -1090,6 +1252,7 @@ class Search {
     uint16_t best_move = kNoMove;
     bool searched_move = false;
     int searched_count = 0;
+    std::array<uint16_t, 136> searched_moves{};
     const int static_evaluation = StaticEvaluation(*position, paths);
     for (int index = 0; index < moves.count; ++index) {
       const uint16_t move = moves.moves[index].move;
@@ -1106,13 +1269,18 @@ class Search {
       if (mode_ == SearchMode::kSelective && ply > 0 &&
           IsWallMove(move) && !transposition_move && !immediate_win) {
         const int plausible_move_limit = 8 + 4 * depth;
-        if (depth <= 5 && searched_count >= plausible_move_limit) continue;
+        if (depth <= 5 && searched_count >= plausible_move_limit) {
+          ++pruned_moves_;
+          continue;
+        }
         if (depth <= 3 && searched_count >= 4 &&
             static_evaluation + 140 * depth <= alpha) {
+          ++pruned_moves_;
           continue;
         }
       }
       searched_move = true;
+      searched_moves[searched_count] = move;
       ++searched_count;
       const uint8_t original_pawn = position->pawns[position->turn];
       MakeMove(position, move);
@@ -1133,6 +1301,7 @@ class Search {
             mode_ == SearchMode::kSelective && ply > 0 && depth >= 3 &&
             searched_count > 4 && !transposition_move && !immediate_win;
         if (reduce) {
+          ++reduced_searches_;
           int reduction = 1;
           if (depth >= 6 && searched_count > 10) reduction = 2;
           const int reduced_depth =
@@ -1141,6 +1310,7 @@ class Search {
                            reduced_depth, -alpha - 1, -alpha, ply + 1,
                            next_extensions);
           if (!timed_out_ && score > alpha) {
+            ++researches_;
             score = -Negamax(position, moves.moves[index].child_paths,
                              search_depth, -alpha - 1, -alpha, ply + 1,
                              next_extensions);
@@ -1151,6 +1321,7 @@ class Search {
                            next_extensions);
         }
         if (!timed_out_ && score > alpha && score < beta) {
+          ++researches_;
           score = -Negamax(position, moves.moves[index].child_paths,
                            next_depth, -beta, -alpha, ply + 1,
                            next_extensions);
@@ -1164,6 +1335,10 @@ class Search {
       }
       if (score > alpha) alpha = score;
       if (alpha >= beta) {
+        ++cutoffs_;
+        for (int failed = 0; failed + 1 < searched_count; ++failed) {
+          RecordFailedMove(position->turn, searched_moves[failed], depth);
+        }
         RecordCutoff(position->turn, move, depth, ply);
         break;
       }
@@ -1220,6 +1395,13 @@ class Search {
   Clock::time_point last_report_;
   uint64_t nodes_ = 0;
   uint64_t transposition_hits_ = 0;
+  uint64_t leaf_nodes_ = 0;
+  uint64_t cutoffs_ = 0;
+  uint64_t reduced_searches_ = 0;
+  uint64_t researches_ = 0;
+  uint64_t pruned_moves_ = 0;
+  int sel_depth_ = 0;
+  int score_volatility_ = 75;
   uint16_t root_best_move_ = kNoMove;
   std::array<std::array<int, kMoveHistorySize>, 2> history_{};
   std::array<std::array<uint16_t, 2>, kMaximumSearchPly> killers_{};

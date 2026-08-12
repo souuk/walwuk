@@ -305,10 +305,13 @@ export function WallzAnalyzer() {
             <small>engine console</small>
             <div><span>status</span><b>{!engineEnabled ? "offline" : thinking ? "scanning" : "done"}</b></div>
             <div><span>searches</span><b>{(analysis?.nodes ?? 0).toLocaleString()}</b></div>
-            <div><span>depth</span><b>{analysis?.depth ?? 0} ply</b></div>
+            <div><span>main</span><b>{analysis?.selectiveDepth ?? analysis?.depth ?? 0} ply</b></div>
+            <div><span>verified</span><b>{analysis?.verifiedDepth ?? 0} ply</b></div>
+            <div><span>seldepth</span><b>{analysis?.selDepth ?? analysis?.depth ?? 0} ply</b></div>
             <div><span>speed</span><b>{(analysis?.nps ?? 0).toLocaleString()} nps</b></div>
             <div><span>time</span><b>{analysis?.timeMs ?? 0} ms</b></div>
             <div><span>tt hits</span><b>{(analysis?.ttHits ?? 0).toLocaleString()}</b></div>
+            <div><span>workers</span><b>{analysis?.resourceUsage.searchWorkers ?? 0}</b></div>
           </div>
         </aside>
 

@@ -34,10 +34,16 @@ jobs:
         run: npm ci
       - name: Validate native engine parity
         run: npm run engine:test:full
+      - name: Audit selective root regret
+        run: node scripts/engine-root-audit.mjs --depth 3 --max-regret 100
+      - name: Validate extension packaging
+        run: npm run walper:test
       - name: Lint source
         run: npm run lint
       - name: Check TypeScript
         run: npm run typecheck
+      - name: Build extension package
+        run: npm run walper:build
       - name: Build static site
         run: npm run build
       - name: Configure Pages

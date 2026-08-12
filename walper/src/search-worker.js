@@ -40,34 +40,48 @@ function packPosition(state) {
 
 self.onmessage = async ({ data }) => {
   if (data?.type !== "start") return;
+  const lane = data.lane || "main";
   try {
     const engine = await loadEngine();
     const position = packPosition(data.state);
-    globalThis.__walwukProgress = (json) => {
-      self.postMessage({ type: "progress", result: JSON.parse(json) });
+    const run = async (searchLane, maxDepth, timeMs) => {
+      globalThis.__walwukProgress = (json) => {
+        self.postMessage({ type: "progress", lane: searchLane, result: JSON.parse(json) });
+      };
+      const args = [
+        position.pawnZero,
+        position.pawnOne,
+        position.wallsZero,
+        position.wallsOne,
+        position.turn,
+        position.horizontalLow,
+        position.horizontalHigh,
+        position.verticalLow,
+        position.verticalHigh,
+        maxDepth,
+        timeMs,
+        data.workerIndex,
+        data.workerCount,
+      ];
+      if (searchLane === "main") engine._walwuk_analyze_selective_split(...args);
+      else engine._walwuk_analyze_split(...args);
+      self.postMessage({
+        type: "done",
+        lane: searchLane,
+        result: JSON.parse(engine.UTF8ToString(engine._walwuk_result())),
+      });
     };
-    engine._walwuk_analyze_selective_split(
-      position.pawnZero,
-      position.pawnOne,
-      position.wallsZero,
-      position.wallsOne,
-      position.turn,
-      position.horizontalLow,
-      position.horizontalHigh,
-      position.verticalLow,
-      position.verticalHigh,
-      20,
-      -1,
-      data.workerIndex,
-      data.workerCount,
-    );
-    self.postMessage({
-      type: "done",
-      result: JSON.parse(engine.UTF8ToString(engine._walwuk_result())),
-    });
+
+    if (lane === "hybrid") {
+      await run("verify", 5, 1000);
+      await run("main", 20, -1);
+    } else {
+      await run(lane, 20, -1);
+    }
   } catch (error) {
     self.postMessage({
       type: "error",
+      lane,
       error: error instanceof Error ? error.message : "engine failed",
     });
   } finally {

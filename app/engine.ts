@@ -21,19 +21,37 @@ export interface AnalysisLimits {
 
 export type AnalysisStopReason = "depth" | "time" | "cancelled" | "error";
 export type EngineBackend = "typescript" | "wasm";
+export type AnalysisConfidence = "provisional" | "verified";
+
+export interface EngineResourceUsage {
+  searchWorkers: number;
+  wasmMemoryBytes: number;
+  assetMemoryBytes: number;
+}
 
 export interface AnalysisResult {
   bestMove: Move | null;
   score: number;
   depth: number;
+  selectiveDepth: number;
+  verifiedDepth: number;
+  selDepth: number;
   pv: Move[];
   nodes: number;
+  verifierNodes: number;
   nps: number;
   timeMs: number;
   ttHits: number;
+  leafNodes: number;
+  cutoffs: number;
+  reducedSearches: number;
+  researches: number;
+  prunedMoves: number;
   selective: boolean;
+  confidence: AnalysisConfidence;
   stopReason: AnalysisStopReason;
   backend: EngineBackend;
+  resourceUsage: EngineResourceUsage;
 }
 
 export type MoveQuality = "best" | "acceptable" | "mistake" | "cry";
@@ -434,6 +452,10 @@ export function analyze(
   const tt = new Map<string, TTEntry>();
   let nodes = 0;
   let ttHits = 0;
+  let selDepth = 0;
+  let leafNodes = 0;
+  let cutoffs = 0;
+  let researches = 0;
   let lastReport = started;
   let timedOut = false;
   const history = Array.from({ length: 2 }, () => new Int32Array(81 + 128));
@@ -499,6 +521,7 @@ export function analyze(
 
   const negamax = (state: GameState, depth: number, alpha: number, beta: number, ply: number): number => {
     nodes++;
+    selDepth = Math.max(selDepth, ply);
     checkTime();
     const won = winner(state);
     if (won !== null) return won === state.turn ? WIN - ply : -WIN + ply;
@@ -506,6 +529,7 @@ export function analyze(
     beta = Math.min(beta, WIN - ply);
     if (alpha >= beta) return alpha;
     if (depth <= 0) {
+      leafNodes++;
       const wallMap = createWallMap(state.walls);
       return staticEvaluation(state, wallMap);
     }
@@ -544,6 +568,7 @@ export function analyze(
       }
       alpha = Math.max(alpha, score);
       if (alpha >= beta) {
+        cutoffs++;
         const index = moveHistoryIndex(move);
         history[state.turn][index] = Math.min(32_000, history[state.turn][index] + depth * depth);
         if (ply < killers.length && killers[ply][0] !== moveKey(move)) {
@@ -575,14 +600,25 @@ export function analyze(
     bestMove: null,
     score: staticEvaluation(initial),
     depth: 0,
+    selectiveDepth: 0,
+    verifiedDepth: 0,
+    selDepth: 0,
     pv: [],
     nodes: 0,
+    verifierNodes: 0,
     nps: 0,
     timeMs: 0,
     ttHits: 0,
+    leafNodes: 0,
+    cutoffs: 0,
+    reducedSearches: 0,
+    researches: 0,
+    prunedMoves: 0,
     selective: false,
+    confidence: "verified",
     stopReason: "depth",
     backend: "typescript",
+    resourceUsage: { searchWorkers: 1, wasmMemoryBytes: 0, assetMemoryBytes: 0 },
   };
 
   for (let depth = 1; depth <= limits.maxDepth; depth++) {
@@ -598,21 +634,35 @@ export function analyze(
         beta = completed.score + 175;
       }
       let score = negamax(initial, depth, alpha, beta, 0);
-      if (score <= alpha || score >= beta) score = negamax(initial, depth, -INF, INF, 0);
+      if (score <= alpha || score >= beta) {
+        researches++;
+        score = negamax(initial, depth, -INF, INF, 0);
+      }
       const elapsed = Math.max(1, performance.now() - started);
       const pv = extractPv(depth);
       completed = {
         bestMove: pv[0] ?? null,
         score,
         depth,
+        selectiveDepth: 0,
+        verifiedDepth: depth,
+        selDepth,
         pv,
         nodes,
+        verifierNodes: nodes,
         nps: Math.round((nodes * 1000) / elapsed),
         timeMs: Math.round(elapsed),
         ttHits,
+        leafNodes,
+        cutoffs,
+        reducedSearches: 0,
+        researches,
+        prunedMoves: 0,
         selective: false,
+        confidence: "verified",
         stopReason: "depth",
         backend: "typescript",
+        resourceUsage: { searchWorkers: 1, wasmMemoryBytes: 0, assetMemoryBytes: 0 },
       };
       onDepth?.(completed);
     } catch (error) {

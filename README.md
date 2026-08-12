@@ -97,16 +97,18 @@ The production search is implemented in [`engine-native/walwuk_engine.cpp`](engi
 react interface
     ↓ position + limits
 coordinating web worker
-    ↓ deterministic root partitions
-up to 12 search workers
-    ↓ one isolated c++ webassembly engine each
+    ↓ main and verifier lanes
+up to 75% of reported logical processors
+    ↓ selective main partitions + exhaustive verifier partitions
 coordinating web worker
     ↓ latest depth completed by every partition
     ↓ progress / final result
 react interface
 ```
 
-The pool uses at most one fewer worker than the browser's reported logical-processor count, capped at twelve. Every retained root move belongs to exactly one deterministic partition. The coordinator accepts a depth only after every partition has completed it, then chooses the highest-scoring result with deterministic tie-breaking and combines node, speed, time, and cache-hit statistics. Parallelism does not further change the plausible candidate set.
+The pool is capped at `floor(0.75 × navigator.hardwareConcurrency)` and twelve workers. It is also limited by known WebAssembly allocations: each isolated worker currently reserves 96 MiB, the fallback engine budget is 256 MiB when device memory is unavailable, and reported memory is discounted because the browser exposes only a coarse estimate. Approximately three quarters of the workers deepen the main selective search while one quarter run the exhaustive verifier. A one-worker device time-slices both lanes and uses a 3:1 active/idle duty cycle.
+
+The main lane searches every legal root move, then uses plausible internal walls, ordering, reductions, and shallow pruning to reach farther. The verifier searches every legal move exhaustively to a shallower but reliable depth. Until same-depth root-score verification is available, any disagreement uses the verifier's move; the deeper main move is accepted when both lanes agree. The console therefore reports **main**, **verified**, and **seldepth** separately rather than implying that the deepest selective iteration is exhaustive.
 
 JavaScript crosses into each WebAssembly instance only when a search starts, when progress is reported, and when the final result is returned. Move generation, pathfinding, evaluation, recursion, pruning, and caching stay inside native code during a search.
 
@@ -218,9 +220,9 @@ The same pathfinder is used in three places:
 2. to evaluate a position;
 3. to reject walls that close every route.
 
-### 5. Generating plausible walls
+### 5. Generating and verifying walls
 
-The production engine retains every legal pawn move but limits wall analysis to plausible placements: walls that touch either player's current shortest-path witness or lie near either pawn. Each retained wall still passes overlap, crossing, wall-reserve, and route-existence validation:
+The main engine retains every legal pawn and wall move at the root. At internal nodes it limits wall analysis to plausible placements: walls that touch either player's current shortest-path witness or lie near either pawn. Each retained wall still passes overlap, crossing, wall-reserve, and route-existence validation:
 
 ```cpp
 if (WallTouchesWitness(paths[0], id, vertical) ||
@@ -233,7 +235,7 @@ if (row_distance <= 1 && column_distance <= 1) {
 }
 ```
 
-At non-root nodes through depth five, a depth-dependent move-count threshold can also prune late, low-priority wall candidates after stronger moves have been searched. This is deliberately selective: a legal but implausible wall can be omitted. The exhaustive native and TypeScript searches remain available for parity testing, benchmarking, and future tuning.
+At non-root nodes through depth five, a depth-dependent move-count threshold can also prune late, low-priority wall candidates after stronger moves have been searched. This is deliberately selective: a legal but implausible internal wall can be omitted. The parallel verifier searches the exhaustive native tree independently, while the TypeScript engine remains a compatibility fallback and differential reference.
 
 The native pathfinder expands the 81 squares as compact bit sets, moves are applied and undone in place, and child path results are carried into recursion. These representation optimizations reduce the cost of every retained branch.
 
@@ -242,8 +244,9 @@ The native pathfinder expands the 81 squares as compact bit sets, moves are appl
 If the search reaches its depth limit without a win, it uses a static evaluation. The absolute score combines three practical signals:
 
 ```ts
-const pathScore = (amber - blue) * 100;
-const wallScore = (state.wallsLeft[0] - state.wallsLeft[1]) * 13;
+const pathScore = (blossomDistance - periwinkleDistance) * 100;
+const wallScore = wallReserveValue(state.wallsLeft[0])
+  - wallReserveValue(state.wallsLeft[1]);
 const mobility = (mobilityBlue - mobilityAmber) * 4;
 return pathScore + wallScore + mobility;
 ```
@@ -453,7 +456,11 @@ The production coordinator starts a pool of isolated WebAssembly workers and for
 - **`periwinkle +3.00 moves`**: the handcrafted evaluation favors periwinkle by roughly three path-equivalent moves. This is not a literal score or guaranteed result.
 - **forced win**: the search found a terminal winning line within the completed search horizon.
 - **best**: the first move in the current principal variation.
-- **depth**: the deepest fully completed search depth, measured in plies.
+- **main**: the deepest fully completed selective search depth.
+- **verified**: the deepest fully completed exhaustive verifier depth.
+- **seldepth**: the deepest individual line reached after bounded extensions.
+- **provisional**: the main and verifier have not yet agreed or established a safety override.
+- **verified result**: the exhaustive lane agrees with the move or overrides a disagreement.
 - **nodes**: positions searched.
 - **nps**: nodes per second.
 - **tt hits**: positions answered from the transposition table instead of being searched again.
@@ -483,21 +490,34 @@ Run all checks before opening a pull request:
 
 ```bash
 npm run engine:test:full
+npm run engine:test:stress
 npm run engine:benchmark
+npm run engine:benchmark:accuracy -- --time-ms 1000 --max-depth 15
+npm run engine:audit -- --depth 3 --output outputs/root-audit.json
+npm run engine:tournament -- --pairs 6
 npm run lint
 npm run typecheck
 npm run build
 ```
 
-`engine:test:full` compares both exhaustive searches through 3 ply on curated positions and compares movement, every legal wall, ordering, paths, and evaluation on 2,000 deterministic random positions. `engine:benchmark` reports TypeScript and WebAssembly NPS on fixed positions and fails if WebAssembly is slower. `npm run build` creates the GitHub Pages output in `dist-pages`.
+`engine:test:full` compares both exhaustive searches through 3 ply on curated positions, checks movement, every legal wall, ordering, paths, and evaluation on 2,000 deterministic random positions, validates hybrid result metadata, and exercises CPU/memory budgeting. `engine:test:stress` expands the deterministic rule-parity sample to 100,000 positions and is intended for engine releases rather than every edit. `engine:benchmark` reports TypeScript and WebAssembly NPS. `engine:benchmark:accuracy` records depth, seldepth, effective branching factor, cutoffs, reductions, re-searches, pruned moves, and selective/exhaustive disagreement. `engine:audit` exhaustively scores every legal root move and records the selective move's regret. Pass `--output report.json` to retain a machine-readable report. `engine:tournament` runs color-swapped 10- and 15-second matches concurrently, caps concurrency using the same CPU and memory policy, and writes raw plus aggregate reports below `outputs/engine-tournaments/`. `npm run build` creates the GitHub Pages output in `dist-pages`.
 
-The production UI uses the plausible selective backend. Its development history, exhaustive comparison results, and color-swapped match harness are documented in [`docs/selective-engine-experiment.md`](docs/selective-engine-experiment.md).
+Offline evaluator data can be generated without changing production behavior:
+
+```bash
+npm run engine:data -- --output training.jsonl --positions 1000 --time-ms 1000
+```
+
+The generator clamps each label search to 15 seconds. Learned ordering or evaluation remains experimental until held-out tests and paired matches show a statistically supported improvement.
+
+The production UI uses the hybrid main/verifier backend. Its selective-search development history, exhaustive comparisons, and color-swapped match harness are documented in [`docs/selective-engine-experiment.md`](docs/selective-engine-experiment.md).
+The first full resource-capped hybrid run is summarized in [`docs/benchmarks/2026-08-11-hybrid.md`](docs/benchmarks/2026-08-11-hybrid.md).
 
 For a quicker development check, `npm run engine:test` uses 2 ply and 250 random positions. The worker backend can be selected internally with `VITE_ENGINE_BACKEND=wasm`, `typescript`, or `compare`; production defaults to `wasm`.
 
 ## Deployment
 
-Every push to `main` triggers [`.github/workflows/pages.yml`](.github/workflows/pages.yml). The workflow installs Emscripten 6.0.6 and Node.js 22, runs full native parity, lint, and TypeScript checks, builds the static site, uploads `dist-pages`, and deploys it to [GitHub Pages](https://souuk.github.io/walwuk/).
+Every push to `main` triggers [`.github/workflows/pages.yml`](.github/workflows/pages.yml). The workflow installs Emscripten 6.0.6 and Node.js 22, runs full native parity, extension packaging tests, lint, and TypeScript checks, builds both the extension and static site, uploads `dist-pages`, and deploys it to [GitHub Pages](https://souuk.github.io/walwuk/).
 
 ## Contributing
 
@@ -512,12 +532,12 @@ When changing engine behavior, describe the rule or evaluation change and includ
 ## Known limitations
 
 - The engine is an analysis aid, not a solved-game oracle.
-- Wall generation is selective. A legal wall outside the shortest-path and pawn-local candidate set can be omitted.
+- Internal main-search wall generation is selective. The root and independent verifier remain exhaustive, but a legal internal wall can still be absent from the deeper main tree.
 - Evaluation is handcrafted and path-based; it is not a trained NNUE engine.
 - A finite depth and time limit can cause a tactical win or loss beyond the current search horizon to be missed.
-- Each native engine instance is single-threaded, but walwuk divides root moves among as many as twelve isolated WebAssembly workers without requiring cross-origin isolation.
+- Each native engine instance is single-threaded, but walwuk divides main and verifier root moves among no more than 75% of reported logical processors, capped at twelve.
 - Each worker has its own fixed 32 MiB transposition table. Workers do not share cache entries or alpha-beta bounds, so the pool duplicates some work and uses considerably more memory than one worker.
-- Search workers and their caches are discarded when an analysis completes or becomes obsolete.
+- GitHub Pages workers cannot share transposition entries or alpha-beta bounds because shared WebAssembly memory requires cross-origin isolation headers that Pages does not provide.
 
 ## License
 
