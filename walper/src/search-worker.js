@@ -39,14 +39,58 @@ function packPosition(state) {
 }
 
 self.onmessage = async ({ data }) => {
+  if (data?.type === "load-value") {
+    const engine = await loadEngine();
+    const bytes = new Uint8Array(data.bytes);
+    const pointer = engine._malloc(bytes.byteLength);
+    if (!pointer) {
+      self.postMessage({ type: "value", loaded: false });
+      return;
+    }
+    try {
+      engine.HEAPU8.set(bytes, pointer);
+      self.postMessage({
+        type: "value",
+        loaded: engine._walwuk_load_value(pointer, bytes.byteLength) === 1,
+      });
+    } finally {
+      engine._free(pointer);
+    }
+    return;
+  }
+  if (data?.type === "load-policy") {
+    const engine = await loadEngine();
+    const bytes = new Uint8Array(data.bytes);
+    const pointer = engine._malloc(bytes.byteLength);
+    if (!pointer) {
+      self.postMessage({ type: "policy", loaded: false });
+      return;
+    }
+    try {
+      engine.HEAPU8.set(bytes, pointer);
+      self.postMessage({
+        type: "policy",
+        loaded: engine._walwuk_load_policy(pointer, bytes.byteLength) === 1,
+      });
+    } finally {
+      engine._free(pointer);
+    }
+    return;
+  }
+  if (data?.type === "clear") {
+    const engine = await loadEngine();
+    engine._walwuk_clear_context();
+    return;
+  }
   if (data?.type !== "start") return;
   const lane = data.lane || "main";
+  const epochId = data.epochId;
   try {
     const engine = await loadEngine();
     const position = packPosition(data.state);
     const run = async (searchLane, maxDepth, timeMs) => {
       globalThis.__walwukProgress = (json) => {
-        self.postMessage({ type: "progress", lane: searchLane, result: JSON.parse(json) });
+        self.postMessage({ type: "progress", epochId, lane: searchLane, result: JSON.parse(json) });
       };
       const args = [
         position.pawnZero,
@@ -67,20 +111,24 @@ self.onmessage = async ({ data }) => {
       else engine._walwuk_analyze_split(...args);
       self.postMessage({
         type: "done",
+        epochId,
         lane: searchLane,
         result: JSON.parse(engine.UTF8ToString(engine._walwuk_result())),
       });
     };
 
     if (lane === "hybrid") {
-      await run("verify", 5, 1000);
-      await run("main", 20, -2);
+      const epochMs = Math.max(100, Number(data.timeMs) || 1000);
+      const verifierMs = Math.max(25, Math.floor(epochMs * 0.2));
+      await run("verify", Math.min(5, data.maxDepth || 20), verifierMs);
+      await run("main", data.maxDepth || 20, Math.max(25, epochMs - verifierMs));
     } else {
-      await run(lane, 20, -2);
+      await run(lane, data.maxDepth || 20, Math.max(25, Number(data.timeMs) || 1000));
     }
   } catch (error) {
     self.postMessage({
       type: "error",
+      epochId,
       lane,
       error: error instanceof Error ? error.message : "engine failed",
     });

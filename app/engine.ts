@@ -19,7 +19,7 @@ export interface AnalysisLimits {
   timeMs: number;
 }
 
-export type AnalysisStopReason = "depth" | "time" | "cancelled" | "error";
+export type AnalysisStopReason = "depth" | "time" | "nodes" | "cancelled" | "error";
 export type EngineBackend = "typescript" | "wasm";
 export type AnalysisConfidence = "provisional" | "verified";
 
@@ -47,7 +47,29 @@ export interface AnalysisResult {
   reducedSearches: number;
   researches: number;
   prunedMoves: number;
+  reverseFutilityCuts?: number;
+  razoringCuts?: number;
+  probCutCuts?: number;
+  historyPrunes?: number;
+  multiCutCuts?: number;
+  singularExtensions?: number;
+  forcedDefenseExtensions?: number;
   exactEndgameHits?: number;
+  searchId?: string;
+  engineVersion?: string;
+  evaluatorVersion?: string;
+  policyVersion?: string;
+  reusedNodes?: number;
+  canonicalTtHits?: number;
+  topologyCacheHits?: number;
+  topologyRepairs?: number;
+  experimentMask?: number;
+  proof?: {
+    outcome: "win" | "loss";
+    distance: number;
+    solver: "zero-wall" | "low-wall" | "proof-number";
+    certificate?: Move[];
+  };
   profile?: {
     fullPathSearches: number;
     pathCacheHits: number;

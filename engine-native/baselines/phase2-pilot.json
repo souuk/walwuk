@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-13T01:38:26.730Z",
+  "engineSha256": "938560f4aa82b3a189ca6322c2dc718b6e0384ae5d5d4c337c94a4a7f80856df",
+  "settings": {
+    "pairedJobs": 1200,
+    "gamesPerJob": 2,
+    "maxDepth": 20,
+    "maxPlies": 120,
+    "challenger": "hybrid",
+    "reference": "exhaustive",
+    "reportedLogicalProcessors": 16,
+    "scheduledJobs": 8,
+    "processorLimit": 12,
+    "engineMemoryBudgetBytes": 1610612736
+  },
+  "aggregate": {
+    "games": 2400,
+    "hybridWins": 1106,
+    "exhaustiveWins": 1277,
+    "unresolved": 17,
+    "hybridWinsByColor": {
+      "periwinkle": 543,
+      "blossom": 563
+    },
+    "exhaustiveWinsByColor": {
+      "periwinkle": 627,
+      "blossom": 650
+    },
+    "plies": 145720,
+    "averagePlies": 60.71666666666667,
+    "shortestGame": 33,
+    "longestGame": 120,
+    "hybridNodes": 39607124957,
+    "exhaustiveNodes": 56135639211
+  },
+  "controls": [
+    {
+      "moveTimeMs": 250,
+      "games": 1200,
+      "score": {
+        "hybrid": 536,
+        "exhaustive": 659,
+        "unresolved": 5
+      },
+      "hybridWinsByColor": {
+        "periwinkle": 279,
+        "blossom": 257
+      },
+      "exhaustiveWinsByColor": {
+        "periwinkle": 340,
+        "blossom": 319
+      },
+      "firstGameScore": {
+        "hybrid": 279,
+        "exhaustive": 319,
+        "unresolved": 2
+      },
+      "returnGameScore": {
+        "hybrid": 257,
+        "exhaustive": 340,
+        "unresolved": 3
+      },
+      "averagePlies": 59.7625,
+      "shortestGame": 33,
+      "longestGame": 120,
+      "hybrid": {
+        "moves": 35827,
+        "nodes": 8137142400,
+        "searchTimeMs": 5943238,
+        "nps": 1369143,
+        "averageDepth": 13.170765065453429
+      },
+      "exhaustive": {
+        "moves": 35888,
+        "nodes": 12468943106,
+        "searchTimeMs": 5926341,
+        "nps": 2103987,
+        "averageDepth": 11.175518279090504
+      },
+      "sprt": {
+        "h0Elo": -2,
+        "h1Elo": 5,
+        "alpha": 0.05,
+        "beta": 0.05,
+        "logLikelihood": -2.5820992422455316,
+        "status": "continue"
+      }
+    },
+    {
+      "moveTimeMs": 1000,
+      "games": 1200,
+      "score": {
+        "hybrid": 570,
+        "exhaustive": 618,
+        "unresolved": 12
+      },
+      "hybridWinsByColor": {
+        "periwinkle": 264,
+        "blossom": 306
+      },
+      "exhaustiveWinsByColor": {
+        "periwinkle": 287,
+        "blossom": 331
+      },
+      "firstGameScore": {
+        "hybrid": 264,
+        "exhaustive": 331,
+        "unresolved": 5
+      },
+      "returnGameScore": {
+        "hybrid": 306,
+        "exhaustive": 287,
+        "unresolved": 7
+      },
+      "averagePlies": 61.670833333333334,
+      "shortestGame": 35,
+      "longestGame": 120,
+      "hybrid": {
+        "moves": 36991,
+        "nodes": 31469982557,
+        "searchTimeMs": 22757294,
+        "nps": 1382853,
+        "averageDepth": 14.530020815874131
+      },
+      "exhaustive": {
+        "moves": 37014,
+        "nodes": 43666696105,
+        "searchTimeMs": 23258718,
+        "nps": 1877433,
+        "averageDepth": 12.360296104176799
+      },
+      "sprt": {
+        "h0Elo": -2,
+        "h1Elo": 5,
+        "alpha": 0.05,
+        "beta": 0.05,
+        "logLikelihood": -1.070418909485884,
+        "status": "continue"
+      }
+    }
+  ],
+  "notes": [
+    "The file-based report is authoritative because seven durable jobs predated the resumed checkpoint after an earlier hard pause.",
+    "Return games inherited per-engine caches in this baseline protocol; their results are reported separately. Future A/B matches clear contexts at each game boundary while retaining reuse within a game.",
+    "Neither time control crossed the configured SPRT boundary, so this pilot does not promote or reject a production change."
+  ]
+}

@@ -12,11 +12,13 @@ import {
   nativeAnalyzeSelectiveSplit,
   nativeAnalyzeSplit,
   nativeBeginSearch,
+  nativeEngine,
   nativeRootMoves,
   nativeSearchRootMove,
   nativeSnapshot,
   typescriptAnalyze,
   typescriptSnapshot,
+  winner,
 } from "./engine-harness.mjs";
 
 const full = process.argv.includes("--full");
@@ -47,6 +49,16 @@ assert.equal(depthLimited.verifierNodes, depthLimited.nodes, "exhaustive nodes s
 const timeLimited = nativeAnalyze(fixtures[0].state, 15, 250);
 assert.equal(timeLimited.stopReason, "time", "timed search should report the time limit");
 assert.ok(timeLimited.depth < 15, "250 ms search unexpectedly completed 15 ply");
+assert.equal(timeLimited.engineVersion, "phase2.1");
+assert.equal(timeLimited.evaluatorVersion, "handcrafted-v2");
+assert.equal(timeLimited.policyVersion, "history-v1");
+
+nativeEngine._walwuk_clear_context();
+const coldPersistentSearch = nativeAnalyze(fixtures[0].state, 15, 100);
+const warmPersistentSearch = nativeAnalyze(fixtures[0].state, 15, 100);
+assert.equal(coldPersistentSearch.reusedNodes, 0, "a cleared engine must start cold");
+assert.ok(warmPersistentSearch.reusedNodes > 0, "a surviving engine must reuse prior TT work");
+nativeEngine._walwuk_clear_context();
 
 const finishedState = {
   pawns: [{ r: 0, c: 4 }, { r: 7, c: 4 }],
@@ -57,6 +69,22 @@ const finishedState = {
 const finishedResult = nativeAnalyze(finishedState, 4);
 assert.equal(finishedResult.bestMove, null, "finished position must not return a best move");
 assert.deepEqual(finishedResult.pv, [], "finished position must not return a principal variation");
+
+const zeroWallState = {
+  pawns: [{ r: 6, c: 4 }, { r: 2, c: 4 }],
+  walls: [],
+  wallsLeft: [0, 0],
+  turn: 0,
+};
+const zeroWallResult = nativeAnalyze(zeroWallState, 20, 25);
+assert.equal(zeroWallResult.proof?.solver, "zero-wall");
+assert.ok(zeroWallResult.proof?.certificate?.length > 0);
+assert.deepEqual(zeroWallResult.proof?.certificate, zeroWallResult.pv);
+let proofPosition = zeroWallState;
+for (const move of zeroWallResult.proof.certificate) {
+  proofPosition = applyMove(proofPosition, move);
+}
+assert.notEqual(winner(proofPosition), null, "zero-wall proof certificate must reach a win");
 
 const selectiveFinishedResult = nativeAnalyzeSelective(finishedState, 4);
 assert.equal(selectiveFinishedResult.bestMove, null, "selective search must stop after a win");

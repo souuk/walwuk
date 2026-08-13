@@ -3,8 +3,7 @@ let engineWorker = null;
 
 function stopWorker(requestId = "") {
   if (requestId && requestId !== activeRequestId) return;
-  engineWorker?.terminate();
-  engineWorker = null;
+  engineWorker?.postMessage({ type: "cancel", requestId: activeRequestId });
   activeRequestId = "";
 }
 
@@ -16,25 +15,27 @@ function forward(message) {
 }
 
 function startWorker(message) {
-  stopWorker();
   activeRequestId = message.requestId;
-  engineWorker = new Worker(chrome.runtime.getURL("engine-worker.js"), {
-    type: "module",
-  });
-  engineWorker.onmessage = ({ data }) => {
-    if (data?.requestId !== activeRequestId) return;
-    forward(data);
-    if (data.type === "done" || data.type === "error") stopWorker(data.requestId);
-  };
-  engineWorker.onerror = (event) => {
-    const requestId = activeRequestId;
-    forward({
-      type: "error",
-      requestId,
-      error: event.message || "engine worker failed",
+  if (!engineWorker) {
+    engineWorker = new Worker(chrome.runtime.getURL("engine-worker.js"), {
+      type: "module",
     });
-    stopWorker(requestId);
-  };
+    engineWorker.onmessage = ({ data }) => {
+      if (data?.requestId !== activeRequestId) return;
+      forward(data);
+    };
+    engineWorker.onerror = (event) => {
+      const requestId = activeRequestId;
+      forward({
+        type: "error",
+        requestId,
+        error: event.message || "engine worker failed",
+      });
+      engineWorker?.terminate();
+      engineWorker = null;
+      activeRequestId = "";
+    };
+  }
   engineWorker.postMessage(message);
 }
 

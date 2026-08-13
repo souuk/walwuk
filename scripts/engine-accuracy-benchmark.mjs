@@ -4,6 +4,7 @@ import {
   fixtures,
   nativeAnalyze,
   nativeAnalyzeSelective,
+  nativeEngine,
 } from "./engine-harness.mjs";
 
 function option(name, fallback) {
@@ -14,6 +15,8 @@ function option(name, fallback) {
 const timeMs = Math.min(15_000, Math.max(25, Number.parseInt(option("time-ms", "1000"), 10)));
 const maxDepth = Math.max(1, Number.parseInt(option("max-depth", "15"), 10));
 const outputPath = option("output", "");
+const experimentMask = Math.max(0, Number.parseInt(option("experiment-mask", "0"), 10));
+nativeEngine._walwuk_set_experiments(experimentMask);
 const requestedPositions = option("positions", "")
   .split(",")
   .map((value) => value.trim())
@@ -37,6 +40,16 @@ function summarize(result) {
     reducedSearches: result.reducedSearches ?? 0,
     researches: result.researches ?? 0,
     prunedMoves: result.prunedMoves ?? 0,
+    reverseFutilityCuts: result.reverseFutilityCuts ?? 0,
+    razoringCuts: result.razoringCuts ?? 0,
+    probCutCuts: result.probCutCuts ?? 0,
+    historyPrunes: result.historyPrunes ?? 0,
+    multiCutCuts: result.multiCutCuts ?? 0,
+    singularExtensions: result.singularExtensions ?? 0,
+    forcedDefenseExtensions: result.forcedDefenseExtensions ?? 0,
+    canonicalTtHits: result.canonicalTtHits ?? 0,
+    topologyCacheHits: result.topologyCacheHits ?? 0,
+    topologyRepairs: result.topologyRepairs ?? 0,
     effectiveBranchingFactor: result.depth > 0
       ? Number(Math.pow(Math.max(1, result.nodes), 1 / result.depth).toFixed(3))
       : 0,
@@ -72,6 +85,6 @@ console.table(records.map((record) => ({
 })));
 
 if (outputPath) {
-  await writeFile(outputPath, `${JSON.stringify({ generatedAt: new Date().toISOString(), records }, null, 2)}\n`);
+  await writeFile(outputPath, `${JSON.stringify({ generatedAt: new Date().toISOString(), experimentMask, records }, null, 2)}\n`);
   console.log(`wrote ${outputPath}`);
 }

@@ -22,6 +22,8 @@ const maxDepth = Math.max(
   Number.parseInt(option("max-depth", "20"), 10),
 );
 const challenger = option("challenger", "hybrid");
+const challengerMask = Math.max(0, Number.parseInt(option("challenger-mask", "0"), 10));
+const challengerModule = option("module", "");
 const summaryOnly = process.argv.includes("--summary-only");
 const timeControls = option("time-controls", "10000,15000")
   .split(",")
@@ -85,9 +87,11 @@ async function runJob(job) {
     "--max-depth", `${maxDepth}`,
     "--max-plies", `${maxPlies}`,
     "--challenger", challenger,
+    "--challenger-mask", `${challengerMask}`,
     "--opening-offset", `${job.openingOffset}`,
     "--json-output", outputPath,
   ];
+  if (challengerModule) argumentsList.push("--module", challengerModule);
 
   await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, argumentsList, {
@@ -152,6 +156,8 @@ if (summaryOnly) {
 
 const aggregate = {
   challenger,
+  challengerMask,
+  challengerModule: challengerModule || null,
   currentEngineSha256,
   engineSha256: [...new Set(
     completed.map((result) => result.engineSha256).filter(Boolean),

@@ -8,6 +8,7 @@ import {
   explainMove,
   formatMove,
   generateMoves,
+  legalPawnMoves,
   moveKey,
   shortestPath,
   staticEvaluation,
@@ -139,6 +140,20 @@ export function nativeAnalyzeSelective(state, maxDepth, timeMs = -1) {
   return JSON.parse(nativeEngine.UTF8ToString(nativeEngine._walwuk_result()));
 }
 
+export function nativeAnalyzeNodes(state, maxDepth, nodeLimit) {
+  nativeEngine._walwuk_analyze_nodes(
+    ...packPosition(state), maxDepth, nodeLimit,
+  );
+  return JSON.parse(nativeEngine.UTF8ToString(nativeEngine._walwuk_result()));
+}
+
+export function nativeAnalyzeSelectiveNodes(state, maxDepth, nodeLimit) {
+  nativeEngine._walwuk_analyze_selective_nodes(
+    ...packPosition(state), maxDepth, nodeLimit,
+  );
+  return JSON.parse(nativeEngine.UTF8ToString(nativeEngine._walwuk_result()));
+}
+
 export function nativeAnalyzeSplit(
   state,
   maxDepth,
@@ -212,6 +227,10 @@ export function typescriptSnapshot(state) {
   return {
     distances: [shortestPath(state, 0).distance, shortestPath(state, 1).distance],
     evaluation: Object.is(evaluation, -0) ? 0 : evaluation,
+    pawnMoveCounts: [
+      legalPawnMoves({ ...state, turn: 0 }).length,
+      legalPawnMoves({ ...state, turn: 1 }).length,
+    ],
     pawnMoves,
     moves,
     legalWalls,

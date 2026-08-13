@@ -34,10 +34,20 @@ jobs:
         run: npm ci
       - name: Validate native engine parity
         run: npm run engine:test:full
+      - name: Build native command-line engine
+        run: npm run engine:build:native
+      - name: Smoke-test native command-line engine
+        run: build-native/walwuk-cli analyze 76 4 10 10 0 0 0 2 -1 exhaustive
+      - name: Compare native CLI and WebAssembly
+        run: npm run engine:test:native-cli
       - name: Audit selective root regret
         run: node scripts/engine-root-audit.mjs --depth 3 --max-regret 100
+      - name: Smoke-test resumable campaign runner
+        run: node scripts/engine-campaign.mjs --duration-seconds 2 --workers 1 --time-controls 25 --max-depth 3 --max-plies 4 --output outputs/ci-campaign-smoke
       - name: Validate extension packaging
         run: npm run walper:test
+      - name: Enforce optional engine asset budget
+        run: npm run engine:asset:test
       - name: Lint source
         run: npm run lint
       - name: Check TypeScript

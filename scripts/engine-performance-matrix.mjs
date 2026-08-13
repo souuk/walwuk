@@ -43,6 +43,7 @@ const wasm = await readFile(path.resolve("public/engine/walwuk-engine.wasm"));
 const summary = {
   generatedAt: new Date().toISOString(),
   engineSha256: createHash("sha256").update(wasm).digest("hex"),
+  wasmBytes: wasm.byteLength,
   environment: {
     cpu: cpus()[0]?.model ?? "unknown",
     reportedLogicalProcessors: availableParallelism(),
