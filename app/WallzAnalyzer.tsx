@@ -18,6 +18,7 @@ import {
 
 interface WorkerMessage {
   type: "progress" | "done" | "warning";
+  searchId?: string;
   result?: AnalysisResult;
   message?: string;
 }
@@ -42,6 +43,8 @@ export function WallzAnalyzer() {
   const [moveExplanation, setMoveExplanation] = useState<MoveExplanation | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const workerBusyRef = useRef(false);
+  const activeSearchIdRef = useRef("");
+  const nextSearchIdRef = useRef(0);
 
   const legalPawn = useMemo(() => legalPawnMoves(state), [state]);
   const bluePath = useMemo(() => shortestPath(state, 0), [state]);
@@ -50,20 +53,17 @@ export function WallzAnalyzer() {
 
   useEffect(() => {
     if (!engineEnabled || currentWinner !== null) {
-      workerRef.current?.terminate();
-      workerRef.current = null;
+      workerRef.current?.postMessage({
+        type: "cancel",
+        searchId: activeSearchIdRef.current,
+      });
+      activeSearchIdRef.current = "";
       workerBusyRef.current = false;
       const timeout = window.setTimeout(() => {
         setThinking(false);
         if (!engineEnabled) setAnalysis(null);
       }, 0);
       return () => window.clearTimeout(timeout);
-    }
-
-    if (workerRef.current && workerBusyRef.current) {
-      workerRef.current.terminate();
-      workerRef.current = null;
-      workerBusyRef.current = false;
     }
 
     let worker = workerRef.current;
@@ -74,6 +74,8 @@ export function WallzAnalyzer() {
       worker = createdWorker;
       workerRef.current = createdWorker;
       createdWorker.onmessage = (event: MessageEvent<WorkerMessage>) => {
+        if (event.data.searchId &&
+            event.data.searchId !== activeSearchIdRef.current) return;
         if (event.data.type === "warning") {
           setNotice(event.data.message ?? "the engine switched to its compatibility mode.");
           return;
@@ -95,13 +97,21 @@ export function WallzAnalyzer() {
     }
 
     workerBusyRef.current = true;
+    const searchId = `pages:${++nextSearchIdRef.current}`;
+    activeSearchIdRef.current = searchId;
     const startTimeout = window.setTimeout(() => {
       setThinking(true);
       setAnalysis(null);
     }, 0);
-    const effectiveTimeMs = deepMode ? Infinity : timeMs;
-    const effectiveMaxDepth = deepMode ? 20 : maxDepth;
-    worker.postMessage({ state, limits: { timeMs: effectiveTimeMs, maxDepth: effectiveMaxDepth } });
+    const effectiveTimeMs = deepMode ? 1000 : timeMs;
+    const effectiveMaxDepth = deepMode ? 64 : maxDepth;
+    worker.postMessage({
+      type: "start",
+      searchId,
+      state,
+      limits: { timeMs: effectiveTimeMs, maxDepth: effectiveMaxDepth },
+      continuous: deepMode,
+    });
 
     return () => window.clearTimeout(startTimeout);
   }, [state, engineEnabled, timeMs, maxDepth, deepMode, currentWinner]);
@@ -145,8 +155,8 @@ export function WallzAnalyzer() {
   };
 
   const reset = () => {
-    workerRef.current?.terminate();
-    workerRef.current = null;
+    workerRef.current?.postMessage({ type: "clear" });
+    activeSearchIdRef.current = "";
     workerBusyRef.current = false;
     setPast([]);
     setFuture([]);

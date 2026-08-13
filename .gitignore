@@ -38,6 +38,10 @@ yarn-error.log*
 /dist-pages/
 /.wrangler/
 /outputs/
+/build-native/
+/training-data/
+/training/*.wlp
+/training/*.wlv
 /work/
 /.emsdk/
 /.emsdk-cache/

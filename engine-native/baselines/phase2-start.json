@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "baselineCommit": "3796370",
+  "capturedAt": "2026-08-12T06:35:11.439Z",
+  "environment": {
+    "platform": "Windows",
+    "reportedLogicalProcessors": 16,
+    "emscripten": "6.0.6",
+    "productionExperimentMask": 0
+  },
+  "openingAt1000Ms": {
+    "exhaustive": {
+      "depth": 5,
+      "nodes": 2764800,
+      "nps": 2762156,
+      "effectiveBranchingFactor": 19.424
+    },
+    "selective": {
+      "depth": 9,
+      "selDepth": 12,
+      "nodes": 1224704,
+      "nps": 1223075,
+      "effectiveBranchingFactor": 4.747
+    }
+  },
+  "persistentTranspositionReuseAt1000Ms": {
+    "samePositionReusedNodes": 9950,
+    "afterExpectedMoveReusedNodes": 6343,
+    "clearedDepthAfterExpectedMove": 8,
+    "warmDepthAfterExpectedMove": 9
+  },
+  "notes": [
+    "Fixed-time measurements vary with browser, temperature, and concurrent work.",
+    "Fixed-depth parity is the correctness gate; NPS and time-to-depth are performance gates.",
+    "The persistent-reuse measurement was captured after the phase2.1 context implementation."
+  ]
+}

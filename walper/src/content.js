@@ -227,10 +227,6 @@
     };
   }
 
-  function effectiveSide(scan) {
-    return settings.side === "p1" || settings.side === "p2" ? settings.side : scan.inferredSide;
-  }
-
   function createOverlay() {
     if (root?.isConnected) return root;
     root = document.createElement("aside");
@@ -244,12 +240,11 @@
         <div class="walper-status" data-field="status">waiting for a Wallz board</div>
         <div class="walper-best" data-field="best">—</div>
         <dl class="walper-grid">
-          <dt>side</dt><dd data-field="side">—</dd>
-          <dt>turn</dt><dd data-field="turn">—</dd>
           <dt>walls</dt><dd data-field="walls">—</dd>
-          <dt>winning</dt><dd data-field="winning">—</dd>
+          <dt class="walper-winning-label">winning</dt><dd class="walper-winning-value" data-field="winning">—</dd>
           <dt>nodes</dt><dd data-field="nodes">0</dd>
-          <dt>depth</dt><dd data-field="depth">—</dd>
+          <dt>sel depth</dt><dd data-field="sel-depth">—</dd>
+          <dt>real depth</dt><dd data-field="real-depth">—</dd>
           <dt>speed</dt><dd data-field="speed">—</dd>
         </dl>
         <details>
@@ -321,7 +316,8 @@
     setField("best", "—");
     setField("winning", "—");
     setField("nodes", "0");
-    setField("depth", "—");
+    setField("sel-depth", "—");
+    setField("real-depth", "—");
     setField("speed", "—");
   }
 
@@ -373,9 +369,10 @@
     setField("winning", globalThis.WalperCore.formatEvaluation(result, currentState));
     setField("nodes", Number(result.nodes || 0).toLocaleString());
     setField(
-      "depth",
-      `m ${result.selectiveDepth ?? result.depth ?? 0} · v ${result.verifiedDepth ?? 0} ply`,
+      "sel-depth",
+      `${result.selDepth ?? result.selectiveDepth ?? result.depth ?? 0} ply`,
     );
+    setField("real-depth", `${result.verifiedDepth ?? 0} ply`);
     setField("speed", `${Number(result.nps || 0).toLocaleString()} nps`);
     drawSuggestion(result.bestMove);
   }
@@ -384,20 +381,15 @@
     if (!scan.ok) {
       setField("status", scan.reason);
       setField("best", "—");
-      setField("side", "—");
-      setField("turn", "—");
       setField("walls", "—");
       setField("winning", "—");
       setField("nodes", "0");
-      setField("depth", "—");
+      setField("sel-depth", "—");
+      setField("real-depth", "—");
       setField("speed", "—");
       clearSuggestion();
       return;
     }
-    const side = effectiveSide(scan);
-    const turn = settings.turn === "p1" || settings.turn === "p2" ? settings.turn : scan.turn;
-    setField("side", `${side}${settings.side === "auto" ? " · auto" : ""}`);
-    setField("turn", `${turn}${turn === side ? " · you" : " · opponent"}`);
     setField("walls", `p1 ${scan.wallsRemaining.p1} · p2 ${scan.wallsRemaining.p2}`);
   }
 
@@ -422,7 +414,8 @@
     setField("best", "thinking…");
     setField("winning", "—");
     setField("nodes", "0");
-    setField("depth", "—");
+    setField("sel-depth", "—");
+    setField("real-depth", "—");
     setField("speed", "—");
     sendRuntimeMessage({
       type: "walper-analyze",

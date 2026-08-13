@@ -106,9 +106,11 @@ coordinating web worker
 react interface
 ```
 
-The pool is capped at `floor(0.75 × navigator.hardwareConcurrency)` and twelve workers. It is also limited by known WebAssembly allocations: each isolated worker currently reserves 96 MiB, the fallback engine budget is 256 MiB when device memory is unavailable, and reported memory is discounted because the browser exposes only a coarse estimate. Approximately three quarters of the workers deepen the main selective search while one quarter run the exhaustive verifier. A one-worker device time-slices both lanes and uses a 3:1 active/idle duty cycle.
+The pool is capped at `floor(0.75 × navigator.hardwareConcurrency)` and by known WebAssembly allocations; there is no separate arbitrary worker ceiling. Each isolated worker currently reserves 96 MiB, the fallback engine budget is 256 MiB when device memory is unavailable, and reported memory is discounted because the browser exposes only a coarse estimate. Approximately three quarters of the workers deepen the main selective search while one quarter run the exhaustive verifier. A one-worker device time-slices both lanes and uses a 3:1 active/idle duty cycle.
 
 The main lane searches every legal root move, then uses plausible internal walls, ordering, reductions, and shallow pruning to reach farther. The verifier searches every legal move exhaustively to a shallower but reliable depth. Until same-depth root-score verification is available, any disagreement uses the verifier's move; the deeper main move is accepted when both lanes agree. The console therefore reports **main**, **verified**, and **seldepth** separately rather than implying that the deepest selective iteration is exhaustive.
+
+Wall candidates are generated structurally first. Path and route-existence work is deferred until alpha-beta actually searches a candidate, so cutoffs avoid preparing most possible wall children. Timed production searches may reuse deeper valid transposition bounds, while deterministic parity requests retain strict horizon matching. Workers and WebAssembly instances persist across bounded analysis epochs, so compatible transposition entries, move histories, and principal variations survive deeper iterations and an observed move. The visible suggestion is still cleared immediately when the board changes. Exactly symmetric roots search one representative of each left-right pair. Positions that begin with both wall reserves empty use a cached exact retrograde solver for the fixed wall topology.
 
 JavaScript crosses into each WebAssembly instance only when a search starts, when progress is reported, and when the final result is returned. Move generation, pathfinding, evaluation, recursion, pruning, and caching stay inside native code during a search.
 
@@ -340,6 +342,8 @@ The narrow probe itself is an exact alpha-beta optimization within the retained 
 
 Different move orders can lead to the same position. Each C++ worker stores analyzed positions in a fixed-size, contiguous transposition table organized into four-entry clusters. Each entry contains both wall masks, packed pawn/reserve/turn metadata, the searched depth, score bound, generation, and best move. A cluster retains several positions with the same table index and replaces empty, older, or shallower entries first.
 
+The table is not destroyed after every request. When a played move reaches a position already analyzed in the previous principal variation or another branch, the next search can reuse its exact score or alpha-beta bound. Full packed-position verification prevents a hash collision from returning an incorrect score. The engine reports these cross-request hits separately as `reused nodes`; a clear command or incompatible engine/evaluator version invalidates them.
+
 The readable TypeScript reference represents the same identity with a map:
 
 ```ts
@@ -491,27 +495,43 @@ Run all checks before opening a pull request:
 ```bash
 npm run engine:test:full
 npm run engine:test:stress
+npm run engine:test:million
 npm run engine:benchmark
 npm run engine:benchmark:accuracy -- --time-ms 1000 --max-depth 15
-npm run engine:audit -- --depth 3 --output outputs/root-audit.json
+npm run engine:benchmark:matrix
+npm run engine:build:profile
+npm run engine:build:simd-experiment
+npm run engine:audit -- --depth 3 --random 32 --output outputs/root-audit.json
 npm run engine:tournament -- --pairs 6
+npm run engine:benchmark:persistence -- --time-ms 1000
+npm run engine:campaign -- --duration-minutes 120 --workers 8
+npm run engine:campaign:report -- --directory outputs/campaigns/phase2-pilot
+npm run engine:test:experiments
+npm run engine:campaign -- --match-mode ab --module outputs/phase2-experimental/walwuk-engine.mjs --challenger-mask 8192 --nodes 50000 --output outputs/campaigns/multicut-fixed-node
+npm run engine:match:ab -- --candidate-mask 8192 --baseline-mask 0 --games 8
+npm run engine:match:ab -- --candidate-mask 8192 --baseline-mask 0 --nodes 50000 --games 8
+npm run engine:match:clock -- --games 2
 npm run lint
 npm run typecheck
 npm run build
 ```
 
-`engine:test:full` compares both exhaustive searches through 3 ply on curated positions, checks movement, every legal wall, ordering, paths, and evaluation on 2,000 deterministic random positions, validates hybrid result metadata, and exercises CPU/memory budgeting. `engine:test:stress` expands the deterministic rule-parity sample to 100,000 positions and is intended for engine releases rather than every edit. `engine:benchmark` reports TypeScript and WebAssembly NPS. `engine:benchmark:accuracy` records depth, seldepth, effective branching factor, cutoffs, reductions, re-searches, pruned moves, and selective/exhaustive disagreement. `engine:audit` exhaustively scores every legal root move and records the selective move's regret. Pass `--output report.json` to retain a machine-readable report. `engine:tournament` runs color-swapped 10- and 15-second matches concurrently, caps concurrency using the same CPU and memory policy, and writes raw plus aggregate reports below `outputs/engine-tournaments/`. `npm run build` creates the GitHub Pages output in `dist-pages`.
+`engine:test:full` compares both exhaustive searches through 3 ply on curated positions, checks movement, every legal wall, ordering, paths, and evaluation on 2,000 deterministic random positions, validates hybrid result metadata, and exercises CPU/memory budgeting. `engine:test:stress` expands the deterministic rule-parity sample to 100,000 positions. `engine:test:million` is the release gate: it streams one million comparisons through deterministic independent shards while capping concurrency at 75% of reported processors and the conservative known-memory limit. `engine:benchmark` reports TypeScript and WebAssembly NPS. `engine:benchmark:accuracy` records depth, seldepth, effective branching factor, cutoffs, reductions, re-searches, pruned moves, and selective/exhaustive disagreement; use `--positions opening,"low reserves"` to select fixtures. `engine:benchmark:persistence` compares a cleared search with a warm same-position search and a warm rebase after the expected move. `engine:benchmark:matrix` runs the standard 250 ms through 15 second matrix and records environment plus engine hashes. `engine:build:profile` enables diagnostic path, candidate, child-preparation, and TT counters which compile out of production builds. `engine:build:simd-experiment` creates a separate SIMD/autovectorized artifact that must pass parity and timing tests before promotion. `engine:audit` exhaustively scores every legal root move and records the selective move's regret; `--random` adds reproducible legal positions. Pass `--output report.json` to retain a machine-readable report. `engine:tournament` runs color-swapped matches concurrently. `engine:campaign` adds resumable ten-minute checkpoints, a 22.5 GiB generation stop, score-by-color and game-length reporting, and CPU/memory job caps; it supports standard or A/B matches under time or fixed-node budgets, retries the same opening after an infrastructure failure, and refuses to mix changed engines or settings into a checkpoint. Creating its configured `stop.request` marker ends it after active jobs and writes a durable checkpoint. `engine:match:ab` directly compares two experiment masks in paired, color-swapped games, with either equal time or `--nodes` budgets. `engine:match:clock` simulates the competitive 180-second clock with a one-second increment and 15-second per-move ceiling. `npm run build` creates the GitHub Pages output in `dist-pages`.
 
 Offline evaluator data can be generated without changing production behavior:
 
 ```bash
 npm run engine:data -- --output training.jsonl --positions 1000 --time-ms 1000
+npm run engine:train:policy -- training.jsonl --output public/engine/assets/policy.wlp
+npm run engine:train:value -- training.jsonl --output public/engine/assets/value.wlv
 ```
 
-The generator clamps each label search to 15 seconds. Learned ordering or evaluation remains experimental until held-out tests and paired matches show a statistically supported improvement.
+The generator clamps each label search to 15 seconds, checkpoints every ten minutes, truncates uncheckpointed tail records before a resume, always includes the verifier's best move in its candidate sample, and samples pawn, horizontal-wall, and vertical-wall candidates across the legal move set. Both trainers stream deterministic shard passes instead of loading the dataset into RAM. Policy holds one candidate group at a time; value uses bounded batches (`--batch-size 1024` by default), so the 25 GiB data ceiling is not also a memory requirement. Learned ordering or evaluation remains experimental until held-out tests and paired matches show a statistically supported improvement.
 
 The production UI uses the hybrid main/verifier backend. Its selective-search development history, exhaustive comparisons, and color-swapped match harness are documented in [`docs/selective-engine-experiment.md`](docs/selective-engine-experiment.md).
 The first full resource-capped hybrid run is summarized in [`docs/benchmarks/2026-08-11-hybrid.md`](docs/benchmarks/2026-08-11-hybrid.md).
+The retained phase-one maximum-strength changes, measurements, and rejected experiments are summarized in [`docs/benchmarks/2026-08-11-maximum-strength-phase1.md`](docs/benchmarks/2026-08-11-maximum-strength-phase1.md).
+Phase-two persistence, proof, campaign, learned-model, shared-memory, and dynamic-scheduling results are tracked in [`docs/benchmarks/2026-08-12-maximum-strength-phase2.md`](docs/benchmarks/2026-08-12-maximum-strength-phase2.md).
 
 For a quicker development check, `npm run engine:test` uses 2 ply and 250 random positions. The worker backend can be selected internally with `VITE_ENGINE_BACKEND=wasm`, `typescript`, or `compare`; production defaults to `wasm`.
 
@@ -535,9 +555,10 @@ When changing engine behavior, describe the rule or evaluation change and includ
 - Internal main-search wall generation is selective. The root and independent verifier remain exhaustive, but a legal internal wall can still be absent from the deeper main tree.
 - Evaluation is handcrafted and path-based; it is not a trained NNUE engine.
 - A finite depth and time limit can cause a tactical win or loss beyond the current search horizon to be missed.
-- Each native engine instance is single-threaded, but walwuk divides main and verifier root moves among no more than 75% of reported logical processors, capped at twelve.
+- Each native engine instance is single-threaded, but walwuk divides main and verifier root moves among no more than 75% of reported logical processors and reduces that count when the known memory budget is tighter.
 - Each worker has its own fixed 32 MiB transposition table. Workers do not share cache entries or alpha-beta bounds, so the pool duplicates some work and uses considerably more memory than one worker.
-- GitHub Pages workers cannot share transposition entries or alpha-beta bounds because shared WebAssembly memory requires cross-origin isolation headers that Pages does not provide.
+- GitHub Pages workers cannot share transposition entries or alpha-beta bounds because shared WebAssembly memory requires cross-origin isolation headers that Pages does not provide. Walper opts into cross-origin isolation and detects shared-memory capability, but the promoted build still uses isolated workers until a shared-table build passes parity and strength gates.
+- The learned policy and value trainers are research tooling. Their output is not loaded by production unless its version is added to the promotion manifest after held-out and paired-game testing.
 
 ## License
 

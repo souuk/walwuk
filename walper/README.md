@@ -41,11 +41,11 @@ The panel includes manual side, turn, and reserve overrides in case the website 
 
 ## Analysis
 
-Wallz `p2` maps to walwuk's upward-moving player zero, while Wallz `p1` maps to downward-moving player one. The extension divides plausible root moves across as many as twelve isolated WebAssembly workers. Every legal pawn move is retained; walls are limited to placements touching a current shortest path or lying near either pawn. Each retained wall still receives full legality and path-existence validation. Every worker has its own four-entry clustered transposition table with exact position verification. If the pool cannot start, walper automatically falls back to one worker.
+Wallz `p2` maps to walwuk's upward-moving player zero, while Wallz `p1` maps to downward-moving player one. The extension uses no more than 75% of the logical processors reported by the browser and reduces that count further when the conservative memory budget requires it. Most workers run the deeper selective search, while a smaller exhaustive lane checks every legal root move. Each worker has its own four-entry clustered transposition table with exact position verification. If the pool cannot start, walper automatically falls back to one worker.
 
-Analysis has no thinking-time cutoff and continually deepens toward 20 ply. The panel always shows the best move from the latest fully completed depth, who that score favors, the current depth and speed, and the number of nodes searched for this position. Reaching 20 ply may take a very long time and still does not prove that the complete game is solved.
+Analysis has no thinking-time cutoff and continually deepens in bounded epochs, with a 64-ply recursion safety ceiling. The panel always shows the best move from the latest fully completed depth, who that score favors, the current depth and speed, and the number of nodes searched for this position. A large selective depth may take a very long time and still does not prove that the complete game is solved; the separately displayed real depth is the exhaustive guarantee.
 
-Each position runs in a disposable worker. When a move or turn change is detected, walper immediately removes the old highlight, resets the node count, cancels that worker, and starts a clean analysis session for the new board.
+Workers and WebAssembly instances persist across turns. Their transposition tables and move-ordering history can therefore reuse compatible calculations after the observed move. When a move or turn change is detected, walper still removes the old highlight and resets the visible counters immediately; only the internal reusable knowledge survives.
 
 ## Scope
 

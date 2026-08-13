@@ -1,6 +1,12 @@
 import type { AnalysisLimits, AnalysisResult, GameState } from "./engine";
 
 interface WalwukModule {
+  _walwuk_clear_context(): void;
+  _walwuk_load_policy(pointer: number, size: number): number;
+  _walwuk_load_value(pointer: number, size: number): number;
+  _malloc(size: number): number;
+  _free(pointer: number): void;
+  HEAPU8: Uint8Array;
   _walwuk_analyze(
     pawnZero: number,
     pawnOne: number,
@@ -69,6 +75,14 @@ function nativeResult(json: string): AnalysisResult {
     reducedSearches: result.reducedSearches ?? 0,
     researches: result.researches ?? 0,
     prunedMoves: result.prunedMoves ?? 0,
+    reverseFutilityCuts: result.reverseFutilityCuts ?? 0,
+    razoringCuts: result.razoringCuts ?? 0,
+    probCutCuts: result.probCutCuts ?? 0,
+    historyPrunes: result.historyPrunes ?? 0,
+    multiCutCuts: result.multiCutCuts ?? 0,
+    singularExtensions: result.singularExtensions ?? 0,
+    forcedDefenseExtensions: result.forcedDefenseExtensions ?? 0,
+    canonicalTtHits: result.canonicalTtHits ?? 0,
     confidence: result.confidence ?? (result.selective ? "provisional" : "verified"),
     resourceUsage: result.resourceUsage ?? {
       searchWorkers: 1,
@@ -155,6 +169,35 @@ async function loadModule(): Promise<WalwukModule> {
   }
 }
 
+export async function clearWasmContext(): Promise<void> {
+  const engineModule = await loadModule();
+  engineModule._walwuk_clear_context();
+}
+
+export async function loadWasmPolicy(bytes: Uint8Array): Promise<boolean> {
+  const engineModule = await loadModule();
+  const pointer = engineModule._malloc(bytes.byteLength);
+  if (!pointer) return false;
+  try {
+    engineModule.HEAPU8.set(bytes, pointer);
+    return engineModule._walwuk_load_policy(pointer, bytes.byteLength) === 1;
+  } finally {
+    engineModule._free(pointer);
+  }
+}
+
+export async function loadWasmValue(bytes: Uint8Array): Promise<boolean> {
+  const engineModule = await loadModule();
+  const pointer = engineModule._malloc(bytes.byteLength);
+  if (!pointer) return false;
+  try {
+    engineModule.HEAPU8.set(bytes, pointer);
+    return engineModule._walwuk_load_value(pointer, bytes.byteLength) === 1;
+  } finally {
+    engineModule._free(pointer);
+  }
+}
+
 export async function analyzeWasm(
   state: GameState,
   limits: AnalysisLimits,
@@ -178,7 +221,7 @@ export async function analyzeWasm(
       packed.verticalLow,
       packed.verticalHigh,
       limits.maxDepth,
-      Number.isFinite(limits.timeMs) ? limits.timeMs : -1,
+      Number.isFinite(limits.timeMs) ? limits.timeMs : -2,
     );
     return nativeResult(engineModule.UTF8ToString(engineModule._walwuk_result()));
   } finally {
@@ -211,7 +254,7 @@ export async function analyzeWasmSplit(
       packed.verticalLow,
       packed.verticalHigh,
       limits.maxDepth,
-      Number.isFinite(limits.timeMs) ? limits.timeMs : -1,
+      Number.isFinite(limits.timeMs) ? limits.timeMs : -2,
       rootIndex,
       rootCount,
     );
@@ -246,7 +289,7 @@ export async function analyzeWasmSelectiveSplit(
       packed.verticalLow,
       packed.verticalHigh,
       limits.maxDepth,
-      Number.isFinite(limits.timeMs) ? limits.timeMs : -1,
+      Number.isFinite(limits.timeMs) ? limits.timeMs : -2,
       rootIndex,
       rootCount,
     );

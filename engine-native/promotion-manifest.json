@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 1,
+  "engineVersion": "phase2.1",
+  "production": {
+    "experimentMask": 0,
+    "evaluator": "handcrafted-v2",
+    "policy": "history-v1",
+    "transpositionTable": {
+      "persistentAcrossSearches": true,
+      "exactPositionVerification": true,
+      "reuseDeeperEntriesInTimedSearch": true,
+      "strictFixedDepthParity": true
+    },
+    "solvers": {
+      "zeroWallRoot": true,
+      "zeroWallInternalFrontier": false,
+      "lowWall": false,
+      "proofNumber": false,
+      "offlineLowWallGraph": {
+        "status": "prototype",
+        "zeroWallNearWinStates": 11520,
+        "zeroWallProofReplay": true,
+        "oneTotalWallAt50000States": "unknown-state-ceiling"
+      }
+    }
+  },
+  "experiments": {
+    "1": {
+      "name": "two-tier delayed topology cache v2",
+      "status": "rejected",
+      "reason": "v2 repaired the 250 ms regression, but at one second preserved depth while reducing average NPS by 25%"
+    },
+    "2": {
+      "name": "continuation and tactical-wall history v2",
+      "status": "rejected",
+      "reason": "250 ms screen lost one aggregate depth and changed two of four moves without evidence of strength"
+    },
+    "4": {
+      "name": "strategic wall-economy evaluator v1",
+      "status": "held",
+      "reason": "250 ms screen lost three aggregate depths; requires a statistically significant strength gain before reconsideration"
+    },
+    "8": {
+      "name": "zero-wall exact solver at internal search frontiers",
+      "status": "rejected",
+      "reason": "250 ms screen lost eight aggregate depths; exact root proof remains enabled separately"
+    },
+    "16": {
+      "name": "partial move selection",
+      "status": "rejected",
+      "reason": "250 ms screen lost two aggregate depths and 32% average NPS"
+    },
+    "32": {
+      "name": "bounded Wallz quiescence",
+      "status": "held",
+      "reason": "250 ms screen lost three aggregate depths; requires tactical-regret and strength evidence"
+    },
+    "64": {
+      "name": "adaptive late-move reductions",
+      "status": "held",
+      "reason": "250 ms screen lost one aggregate depth and changed two of four moves; requires selective audit"
+    },
+    "128": {
+      "name": "topology-position correction history",
+      "status": "rejected",
+      "reason": "250 ms screen lost one aggregate depth and 33% average NPS without changing the chosen moves"
+    },
+    "256": {
+      "name": "quantized learned value blend",
+      "status": "untrained",
+      "reason": "dependency-free Q10 inference is implemented; no model can be evaluated until training data and PyTorch are available"
+    },
+    "512": {
+      "name": "reverse futility pruning",
+      "status": "held",
+      "reason": "gained one aggregate ply at both 250 ms and one second, but changed two of four moves; requires regret and paired-match evidence"
+    },
+    "1024": {
+      "name": "razoring",
+      "status": "rejected",
+      "reason": "the 250 ms screen gained no depth, reduced average NPS, and changed three of four moves"
+    },
+    "2048": {
+      "name": "ProbCut",
+      "status": "held",
+      "reason": "gained three aggregate plies at 250 ms and one at one second, but changed two of four moves; requires regret and paired-match evidence"
+    },
+    "4096": {
+      "name": "history pruning",
+      "status": "rejected",
+      "reason": "gained no aggregate depth at either screen and changed a move at one second"
+    },
+    "8192": {
+      "name": "multi-cut",
+      "status": "held",
+      "reason": "gained two aggregate plies at one second but changed two of four moves; requires regret and paired-match evidence"
+    },
+    "16384": {
+      "name": "singular extension",
+      "status": "rejected",
+      "reason": "lost two aggregate plies at 250 ms and changed two of four moves"
+    },
+    "32768": {
+      "name": "forced-defense extension",
+      "status": "rejected",
+      "reason": "gained no aggregate depth at either screen and changed a move at one second"
+    },
+    "65536": {
+      "name": "left-right canonical transposition table",
+      "status": "rejected",
+      "reason": "parity and random mirror reuse passed; constant-time wall reflection was retained, but the optimized 250 ms screen lost two aggregate plies, reduced median NPS by 32%, and changed one of four timed moves"
+    },
+    "131072": {
+      "name": "all-shortest-route selective walls",
+      "status": "held",
+      "reason": "demand-driven route unions fixed the depth regression and reduced the 250 ms median-NPS cost from 43% to 23%; a 42-position depth-3 audit reduced maximum root regret from 151 to 100 and fixed the 151-unit miss, but two of four timed moves still changed, so fixed-node and paired strength evidence are required"
+    }
+  },
+  "promotionRequirements": {
+    "exhaustiveParity": true,
+    "fixedNodeNonRegression": true,
+    "fixedTimePositiveEvidence": true,
+    "maximumFalsePositiveRate": 0.05,
+    "maximumFalseNegativeRate": 0.05
+  },
+  "parallelResearch": {
+    "dynamicRootQueue": {
+      "status": "prototype",
+      "openingDepth3": {
+        "singleWorkerMs": 102,
+        "eightWorkerMs": 108
+      },
+      "openingDepth5": {
+        "singleWorkerMs": 7201,
+        "eightWorkerMs": 1557,
+        "speedup": 4.63,
+        "efficiency": 0.579
+      },
+      "decision": "Keep deterministic partitions in production until persistent browser scheduling reaches the 60% efficiency gate."
+    },
+    "sharedMemoryArtifact": {
+      "status": "parity-passed-prototype",
+      "productionEnabled": false
+    }
+  },
+  "compilationResearch": {
+    "wasmSimd": {
+      "status": "rejected",
+      "reason": "Three-trial 250 ms medians produced the same 399582-byte artifact, reduced average depth from 8.00 to 7.75, and reduced average NPS from 1457446 to 1426536"
+    }
+  }
+}

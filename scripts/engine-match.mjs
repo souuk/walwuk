@@ -1,10 +1,9 @@
 import { performance } from "node:perf_hooks";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import createEngine from "../public/engine/walwuk-engine.mjs";
 import {
   INITIAL_STATE,
   applyMove,
@@ -22,6 +21,10 @@ function option(name, fallback) {
 
 const gameCount = Math.max(1, Number.parseInt(option("games", "8"), 10));
 const challenger = option("challenger", "hybrid");
+const challengerMask = Math.max(
+  0,
+  Number.parseInt(option("challenger-mask", "0"), 10),
+);
 if (!new Set(["hybrid", "selective"]).has(challenger)) {
   throw new Error("--challenger must be hybrid or selective");
 }
@@ -37,18 +40,26 @@ const requestedMoveTimeMs = Math.min(
 const moveTimeMs = requestedMoveTimeMs >= 5_000
   ? requestedMoveTimeMs - 100
   : requestedMoveTimeMs;
+const initialClockMs = Math.max(0, Number.parseInt(option("clock-ms", "0"), 10));
+const incrementMs = Math.max(0, Number.parseInt(option("increment-ms", "1000"), 10));
 const maxDepth = Math.max(1, Number.parseInt(option("max-depth", "15"), 10));
 const maxPlies = Math.max(1, Number.parseInt(option("max-plies", "120"), 10));
 const verbose = process.argv.includes("--verbose");
 
-const moduleUrl = new URL("../public/engine/walwuk-engine.mjs", import.meta.url);
-const wasmUrl = new URL("../public/engine/walwuk-engine.wasm", import.meta.url);
+const challengerModulePath = option("module", "");
+const moduleUrl = challengerModulePath
+  ? pathToFileURL(path.resolve(challengerModulePath))
+  : new URL("../public/engine/walwuk-engine.mjs", import.meta.url);
+const wasmUrl = new URL("walwuk-engine.wasm", moduleUrl);
+const createEngine = (await import(moduleUrl.href)).default;
 const engineSha256 = createHash("sha256")
   .update(await readFile(wasmUrl))
   .digest("hex");
 const selectiveEngine = await createEngine({
   locateFile: (path) => fileURLToPath(new URL(path, moduleUrl)),
 });
+exhaustiveEngine._walwuk_set_experiments(0);
+selectiveEngine._walwuk_set_experiments(challengerMask);
 
 function runNative(engine, style, state, timeLimitMs) {
   const started = performance.now();
@@ -66,13 +77,13 @@ function runNative(engine, style, state, timeLimitMs) {
   return { ...result, elapsedMs };
 }
 
-function analyze(engine, style, state) {
+function analyze(engine, style, state, availableTimeMs = moveTimeMs) {
   if (style !== "hybrid") {
-    return runNative(engine, style, state, moveTimeMs);
+    return runNative(engine, style, state, availableTimeMs);
   }
 
-  const verifierTimeMs = Math.max(1, Math.floor(moveTimeMs * 0.25));
-  const mainTimeMs = Math.max(1, moveTimeMs - verifierTimeMs);
+  const verifierTimeMs = Math.max(1, Math.floor(availableTimeMs * 0.25));
+  const mainTimeMs = Math.max(1, availableTimeMs - verifierTimeMs);
   const verified = runNative(engine, "exhaustive", state, verifierTimeMs);
   const main = runNative(engine, "selective", state, mainTimeMs);
   const agrees = JSON.stringify(main.bestMove) === JSON.stringify(verified.bestMove);
@@ -87,6 +98,16 @@ function analyze(engine, style, state) {
     timeMs: main.timeMs + verified.timeMs,
     elapsedMs: main.elapsedMs + verified.elapsedMs,
   };
+}
+
+function clockAllocation(state, remainingMs) {
+  const ownWalls = state.wallsLeft[state.turn];
+  const totalWalls = state.wallsLeft[0] + state.wallsLeft[1];
+  const reserveMs = Math.min(10_000, Math.max(2_000, remainingMs * 0.08));
+  const usableMs = Math.max(1, remainingMs - reserveMs);
+  const expectedTurns = totalWalls === 0 ? 16 : 12 + ownWalls;
+  const planned = usableMs / expectedTurns + incrementMs * 0.75;
+  return Math.max(25, Math.min(15_000, Math.floor(planned), Math.floor(usableMs)));
 }
 
 function randomGenerator(seed) {
@@ -123,21 +144,39 @@ const totals = {
 const results = [];
 
 for (let gameIndex = 0; gameIndex < gameCount; ++gameIndex) {
+  // Each color-swapped game is an independent sample. Reuse remains enabled
+  // between moves inside the game, matching Pages and walper behavior.
+  exhaustiveEngine._walwuk_clear_context();
+  selectiveEngine._walwuk_clear_context();
   const pairIndex = openingOffset + Math.floor(gameIndex / 2);
   let state = openingForPair(pairIndex);
   const challengerPlayer = gameIndex % 2;
   let ply = 0;
   let maxMoveElapsedMs = 0;
+  const clocks = [initialClockMs, initialClockMs];
+  let timeoutWinner = null;
   const moveLog = [];
 
   while (winner(state) === null && ply < maxPlies) {
     const style = state.turn === challengerPlayer ? challenger : "exhaustive";
     const engine = style === "exhaustive" ? exhaustiveEngine : selectiveEngine;
-    const result = analyze(engine, style, state);
+    const movingPlayer = state.turn;
+    const allocatedMs = initialClockMs > 0
+      ? clockAllocation(state, clocks[movingPlayer])
+      : moveTimeMs;
+    const result = analyze(engine, style, state, allocatedMs);
     if (!result.bestMove) {
       throw new Error(`${style} returned no move in game ${gameIndex + 1}, ply ${ply + 1}`);
     }
     maxMoveElapsedMs = Math.max(maxMoveElapsedMs, result.elapsedMs);
+    if (initialClockMs > 0) {
+      clocks[movingPlayer] -= result.elapsedMs;
+      if (clocks[movingPlayer] <= 0) {
+        timeoutWinner = 1 - movingPlayer;
+        break;
+      }
+      clocks[movingPlayer] += incrementMs;
+    }
     const stats = totals[style === "exhaustive" ? "exhaustive" : "challenger"];
     ++stats.moves;
     stats.nodes += result.nodes;
@@ -159,12 +198,14 @@ for (let gameIndex = 0; gameIndex < gameCount; ++gameIndex) {
       verifiedDepth: result.verifiedDepth ?? 0,
       nodes: result.nodes,
       timeMs: result.timeMs,
+      allocatedMs,
+      clockMs: initialClockMs > 0 ? Math.round(clocks[movingPlayer]) : null,
     });
     state = applyMove(state, result.bestMove);
     ++ply;
   }
 
-  const gameWinner = winner(state);
+  const gameWinner = timeoutWinner ?? winner(state);
   results.push({
     game: gameIndex + 1,
     opening: pairIndex,
@@ -174,6 +215,10 @@ for (let gameIndex = 0; gameIndex < gameCount; ++gameIndex) {
       : gameWinner === challengerPlayer ? "challenger" : "exhaustive",
     plies: ply,
     maxMoveMs: Math.round(maxMoveElapsedMs),
+    endedBy: timeoutWinner !== null
+      ? "clock"
+      : winner(state) !== null ? "goal" : "ply-limit",
+    clocks: initialClockMs > 0 ? clocks.map(Math.round) : null,
     moves: moveLog,
   });
   console.log(
@@ -197,16 +242,21 @@ const exhaustiveWins = results.filter(({ winner: value }) => value === "exhausti
 const unresolved = results.length - challengerWins - exhaustiveWins;
 console.log(
   `score: ${challenger} ${challengerWins}, exhaustive ${exhaustiveWins}, unresolved ${unresolved}; ` +
-  `${moveTimeMs} ms native search budget per move ` +
-  `(${requestedMoveTimeMs} ms wall-clock limit)`,
+  (initialClockMs > 0
+    ? `${initialClockMs / 1000}+${incrementMs / 1000} clock, 15 s move cap`
+    : `${moveTimeMs} ms native search budget per move ` +
+      `(${requestedMoveTimeMs} ms wall-clock limit)`),
 );
 
 if (jsonOutput) {
   const summary = {
     challenger,
+    challengerMask,
     engineSha256,
     requestedMoveTimeMs,
     searchBudgetMs: moveTimeMs,
+    initialClockMs,
+    incrementMs,
     maxDepth,
     maxPlies,
     openingOffset,

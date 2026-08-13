@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 
 import {
@@ -7,6 +8,8 @@ import {
   nativeBeginSearch,
   nativeRootMoves,
   nativeSearchRootMove,
+  packPosition,
+  iterateRandomPositions,
 } from "./engine-harness.mjs";
 
 function option(name, fallback) {
@@ -28,12 +31,51 @@ const maxRegret = Math.max(
   Number.parseInt(option("max-regret", "100"), 10),
 );
 const output = option("output", "");
+const modulePath = option("module", "");
+const experimentMask = Math.max(0, Number.parseInt(option("experiment-mask", "0"), 10));
+const randomPositions = Math.max(0, Number.parseInt(option("random", "0"), 10));
+const seed = Number.parseInt(option("seed", "1831565813"), 10) >>> 0;
+let beginSearch = nativeBeginSearch;
+let rootMoves = nativeRootMoves;
+let searchRootMove = nativeSearchRootMove;
+let analyzeSelective = nativeAnalyzeSelective;
+if (modulePath) {
+  const moduleUrl = pathToFileURL(path.resolve(modulePath));
+  const createEngine = (await import(moduleUrl.href)).default;
+  const engine = await createEngine({
+    locateFile: (name) => fileURLToPath(new URL(name, moduleUrl)),
+  });
+  engine._walwuk_set_experiments(experimentMask);
+  const result = () => JSON.parse(engine.UTF8ToString(engine._walwuk_result()));
+  beginSearch = () => engine._walwuk_begin_search();
+  rootMoves = (state) => {
+    engine._walwuk_root_moves(...packPosition(state));
+    return result().moves;
+  };
+  searchRootMove = (state, code, searchDepth) => {
+    engine._walwuk_search_root_move(
+      ...packPosition(state), code, searchDepth, -1_000_000, 1_000_000,
+    );
+    return result();
+  };
+  analyzeSelective = (state, searchDepth) => {
+    engine._walwuk_analyze_selective(...packPosition(state), searchDepth, -1);
+    return result();
+  };
+}
 const records = [];
+const auditPositions = [
+  ...fixtures,
+  ...[...iterateRandomPositions(randomPositions, seed)].map((state, index) => ({
+    name: `random-${index}`,
+    state,
+  })),
+];
 
-for (const fixture of fixtures) {
-  nativeBeginSearch();
-  const rootScores = nativeRootMoves(fixture.state).map((code) => {
-    const result = nativeSearchRootMove(fixture.state, code, depth);
+for (const fixture of auditPositions) {
+  beginSearch();
+  const rootScores = rootMoves(fixture.state).map((code) => {
+    const result = searchRootMove(fixture.state, code, depth);
     return {
       moveCode: code,
       move: result.bestMove,
@@ -44,7 +86,7 @@ for (const fixture of fixtures) {
   }).sort((left, right) =>
     right.score - left.score || left.moveCode - right.moveCode,
   );
-  const selective = nativeAnalyzeSelective(fixture.state, depth);
+  const selective = analyzeSelective(fixture.state, depth);
   const selectedCode = moveCode(selective.bestMove);
   const selected = rootScores.find(({ moveCode: code }) =>
     code === selectedCode,
@@ -78,15 +120,20 @@ console.table(records.map((record) => ({
 const failures = records.filter((record) =>
   record.regret === null || record.regret > maxRegret,
 );
+if (output) {
+  await mkdir(path.dirname(path.resolve(output)), { recursive: true });
+  await writeFile(output, `${JSON.stringify({
+    depth,
+    experimentMask,
+    randomPositions,
+    seed,
+    records,
+  }, null, 2)}\n`);
+  console.log(`wrote ${output}`);
+}
 if (failures.length > 0) {
   throw new Error(
     `root audit exceeded ${maxRegret} evaluation units: ` +
     failures.map((record) => `${record.position} (${record.regret})`).join(", "),
   );
-}
-
-if (output) {
-  await mkdir(path.dirname(path.resolve(output)), { recursive: true });
-  await writeFile(output, `${JSON.stringify({ depth, records }, null, 2)}\n`);
-  console.log(`wrote ${output}`);
 }
