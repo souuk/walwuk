@@ -1,0 +1,25 @@
+\section{Experimental Governance}
+\subsection{The promotion ladder}
+An idea moves through five states. \emph{Proposed} means it has a rationale but no implementation. \emph{Implemented} means it can be enabled independently. \emph{Held} means it passes available correctness checks but lacks sufficient strength or performance evidence. \emph{Rejected} means a reproducible screen failed. \emph{Promoted} means the production manifest enables it after all applicable gates.
+
+The first gate is deterministic rule parity. The second is fixed-depth exhaustive parity for changes claiming exact equivalence. Selective changes instead face a pruning audit and root-regret comparison. Short fixed-node and 250 ms screens eliminate obviously harmful candidates cheaply. Survivors advance through one-, five-, ten-, and fifteen-second paired matches. Only one experimental mechanism is compared at a time unless the experiment explicitly studies interaction.
+
+This ordering minimizes both false confidence and compute waste. A million-game match cannot redeem a wall-rule bug. Conversely, a parity-perfect rewrite may still be slower and should not enter a strength campaign. The manifest preserves failed experiments so future work does not unknowingly repeat them.
+
+\subsection{Statistical interpretation}
+Self-play games are paired by opening and color. The score is separated by engine, color, time control, and game order. Unfinished games are reported as unresolved rather than silently scored as draws because full Quoridor is not assumed draw-free. Sequential testing uses predeclared hypotheses and error targets; stopping because an intermediate score looks attractive would invalidate the test.
+
+Engine games are not independent when they reuse the same opening family, deterministic tie breaks, or cross-game caches. The early Phase Two pilot inherited caches between the outbound and return games, so its first and return scores are published separately and the campaign is not used for promotion. The revised harness clears contexts at game boundaries while preserving reuse between moves inside a game, matching actual deployment.
+
+\subsection{Resource governance}
+Every benchmark, campaign, and training process observes the same 75\% scheduling ceiling. On the recorded 16-thread host this permits at most twelve heavy workers, but the 1.5 GiB engine budget limited the pilot to eight concurrent jobs. This is not merely a courtesy feature. Oversubscription can increase aggregate nodes while lowering each engine's completed depth, distort comparisons through thermal throttling, and make Chrome unusable.
+
+Known allocations include Wasm memories, TTs, topology caches, model bytes, and worker buffers. When browser memory APIs are unavailable, the engine uses a conservative fallback rather than inferring unlimited capacity. Allocation failure reduces table size or worker count and retries once. Resource settings become part of the experiment identity.
+
+\subsection{Reproducibility and artifact identity}
+Every result intended for the paper is copied from volatile output into an immutable curated snapshot. The snapshot contains engine and documentation commits, Wasm and wrapper hashes, evaluator and policy versions, experiment mask, environment, corpus, and protocol limitations. The paper generator hashes the snapshot again and emits the digest manifest included in the Overleaf archive.
+
+Generated macros prevent prose from silently diverging from tables. Generated plot CSVs prevent a graph from using a different result set than its caption. The evidence ledger maps each important number to a snapshot field and original report. A correction creates a replacement snapshot rather than overwriting the old evidence.
+
+\subsection{Research ethics and user data}
+Self-play and synthetic legal positions are the default data sources. Positions observed through the extension do not automatically enter training. A user position may be exported only through an explicit action, and an exported record should exclude account identity, chat, page content, and unrelated screen data. Learned assets must document their provenance and remain within the shipped-data budget.

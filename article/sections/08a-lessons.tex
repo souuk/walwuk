@@ -1,0 +1,21 @@
+\section{Lessons from Successful and Failed Ideas}
+\subsection{Exact optimization should precede aggressive pruning}
+Bit masks, precomputed conflicts, make/unmake, lazy child preparation, and compact TT entries improved the cost of work the engine already had to perform. Their fixed-depth behavior could be compared directly. Aggressive pruning offered larger apparent depth gains but also changed moves and sometimes reduced practical strength. The safest development order is therefore to reduce exact cost first, improve ordering second, and omit work only after the audit infrastructure is strong enough to expose misses.
+
+\subsection{Cache admission matters as much as cache lookup}
+The engine repeatedly encountered a common optimization trap: a theoretically reusable object was too expensive to build for its actual reuse frequency. Larger TTs, eager topology fields, and broad path caches increased hits or available information while reducing throughput. A useful cache requires a favorable product of reuse probability and saved work, not merely an expensive key. Generation aging, delayed admission, compact entries, and locality can matter more than capacity.
+
+\subsection{A deeper number can conceal less coverage}
+The selective engine often reached several more plies than exhaustive search, yet lost the large preliminary pilot. Seldepth could be higher still because one forced line received extensions. These observations are not contradictory. Depth reports the shape of the algorithm, not the probability that its move is correct. A fair assessment also needs legal coverage, root regret, score stability, and match outcome.
+
+\subsection{Human theory is best translated into features and tests}
+Advice such as saving walls, blocking routes rather than pawns, keeping one's own lane open, and exploiting jumps is strategically plausible. Encoding it as a forced opening rule can make the engine brittle. Translating it into measurable features creates hypotheses: reserve scarcity, actual path delay, own-path harm, route multiplicity, corridor width, and jump tempo. Search remains free to violate the heuristic when a tactical line justifies the cost.
+
+\subsection{Negative results are cumulative knowledge}
+Rejected SIMD, canonical symmetry, topology caching, partial selection, history variants, and pruning designs narrow the future design space. They also reveal the difference between native intuitions and WebAssembly behavior. Recording the exact implementation and screen prevents the project from cycling through the same ideas under new names and makes later revisitation meaningful when surrounding architecture changes.
+
+\subsection{A verifier is a floor, not an oracle}
+The exhaustive lane improves honesty and catches shallow contradictions, but it should not be anthropomorphized as certainty. At depth six it knows every legal root continuation for six plies under its evaluation; it does not know the full game. The best suggestion may originate in the deeper lane, the verifier may override it, or both may agree for different horizon-dependent reasons. Confidence must remain tied to what was actually completed.
+
+\subsection{Portability changes the research problem}
+A native-only engine could use process threads, unrestricted files, and architecture-specific intrinsics. \walwuk{} must serve both a static GitHub Pages application and a Chrome extension. Worker startup, module loading, shared-memory headers, browser throttling, and memory duplication become algorithmic constraints. The benefit is reproducibility: the same C++ core can be distributed broadly and its artifact hash compared across both interfaces.

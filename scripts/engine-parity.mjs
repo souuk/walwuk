@@ -49,7 +49,7 @@ assert.equal(depthLimited.verifierNodes, depthLimited.nodes, "exhaustive nodes s
 const timeLimited = nativeAnalyze(fixtures[0].state, 15, 250);
 assert.equal(timeLimited.stopReason, "time", "timed search should report the time limit");
 assert.ok(timeLimited.depth < 15, "250 ms search unexpectedly completed 15 ply");
-assert.equal(timeLimited.engineVersion, "phase2.1");
+assert.equal(timeLimited.engineVersion, "phase3.0-dev");
 assert.equal(timeLimited.evaluatorVersion, "handcrafted-v2");
 assert.equal(timeLimited.policyVersion, "history-v1");
 

@@ -63,6 +63,7 @@ export interface AnalysisResult {
   canonicalTtHits?: number;
   topologyCacheHits?: number;
   topologyRepairs?: number;
+  resumedDepth?: number;
   experimentMask?: number;
   proof?: {
     outcome: "win" | "loss";

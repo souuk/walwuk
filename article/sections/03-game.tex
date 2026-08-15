@@ -1,0 +1,10 @@
+\section{Game and Problem Formulation}
+Let $S=\{0,\ldots,80\}$ be the pawn squares of a 9$\times$9 board and let $W_h,W_v\subseteq\{0,\ldots,63\}$ encode horizontal and vertical wall placements. A position is
+\begin{equation}
+s=(p_0,p_1,W_h,W_v,r_0,r_1,t),
+\end{equation}
+where $p_i$ is a pawn square, $r_i\in[0,10]$ is a wall reserve, and $t$ is the side to move. Periwinkle begins at the bottom and seeks the top row; blossom begins at the top and seeks the bottom row. Wallz uses those color and coordinate conventions, while the underlying rules are two-player Quoridor.
+
+A legal turn is either a legal pawn move or one wall placement. Pawn motion is orthogonal unless adjacency to the opposing pawn permits a straight or diagonal jump under the standard obstruction rules. Walls span two adjacent board edges, may neither overlap nor cross, and must leave at least one path from each pawn to its goal. Reaching a goal row ends the game immediately.
+
+For player $i$, $\delta_i(s)$ denotes the shortest legal pawn-path length under the current wall topology. A ply is one action by one player. A forced outcome is reported only when a complete search or exact solver establishes it; a finite heuristic score is not a proof. An open board has four-neighbor pawn motion but 128 nominal wall identities. Structural conflicts reduce that count, yet ordinary early positions still expose roughly one hundred wall choices~\cite{slatton2026article}. This branching asymmetry makes nominal depth incomparable with chess depth.

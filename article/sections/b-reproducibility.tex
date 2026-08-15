@@ -1,0 +1,11 @@
+\section{Reproducibility}
+From the repository root, the following commands regenerate the committed paper assets, validate evidence and references, build locally when a TeX distribution is available, and create an Overleaf ZIP:
+\begin{verbatim}
+npm run article:generate
+npm run article:check
+npm run article:build
+npm run article:package
+\end{verbatim}
+The package command places every required source beneath the ZIP root; Overleaf should use \texttt{main.tex}, pdfLaTeX, and BibTeX. Engine validation commands and exact artifact metadata are listed in the evidence ledger and generated snapshot manifest.
+
+The current recorded environment reports an Intel Core i5-12600KF class host with 16 logical processors, Emscripten \EmscriptenVersion, a 12-worker processor ceiling, and a \EngineMemoryMiB\,MiB engine-memory budget. The pilot scheduled \PilotScheduledJobs concurrent jobs because memory constrained the run before the processor ceiling.

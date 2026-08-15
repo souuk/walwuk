@@ -1,0 +1,29 @@
+% Generated file.
+\begin{table*}[t]
+\centering
+\caption{Versioned search and evaluation experiments. Held means parity passed but strength evidence is insufficient.}
+\label{tab:experiments}
+\scriptsize
+\begin{tabular}{p{0.23\textwidth}p{0.09\textwidth}p{0.58\textwidth}}
+\toprule
+Experiment & Status & Recorded result \\
+\midrule
+delayed topology cache v2 & rejected & At 1 s, preserved depth but reduced average NPS by 25\%. \\
+continuation/tactical-wall history v2 & rejected & Lost one aggregate ply and changed two of four moves. \\
+strategic wall-economy evaluator & held & Lost three aggregate plies; strength evidence required. \\
+partial move selection & rejected & Lost two aggregate plies and 32\% average NPS. \\
+bounded quiescence & held & Lost three aggregate plies; tactical evidence required. \\
+adaptive late-move reductions & held & Changed two of four moves; selective audit required. \\
+reverse futility & held & Gained one aggregate ply but changed two of four moves. \\
+razoring & rejected & No depth gain and lower average NPS. \\
+ProbCut & held & Gained up to three aggregate plies; strength evidence required. \\
+history pruning & rejected & No aggregate depth gain. \\
+multi-cut & held & Gained two aggregate plies at 1 s; changed two moves. \\
+singular extension & rejected & Lost two aggregate plies. \\
+forced-defense extension & rejected & No aggregate depth gain. \\
+canonical transposition table & rejected & Median NPS fell 32\% and two aggregate plies were lost. \\
+all-shortest-route candidates & held & Maximum audited regret fell from 151 to 100; median NPS cost remained 23\%. \\
+quantized learned value & untrained & Inference exists; no production-quality dataset or model. \\
+\bottomrule
+\end{tabular}
+\end{table*}

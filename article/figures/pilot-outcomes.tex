@@ -1,0 +1,12 @@
+\begin{tikzpicture}
+\begin{axis}[
+  ybar,bar width=10pt,width=\columnwidth,height=4cm,
+  ylabel={wins},symbolic x coords={periwinkle,blossom},xtick=data,
+  legend style={font=\scriptsize,at={(0.5,1.02)},anchor=south,legend columns=2},
+  ymin=0,grid=major
+]
+\addplot table[x=color,y=hybrid,col sep=comma]{generated/pilot-wins.csv};
+\addplot table[x=color,y=exhaustive,col sep=comma]{generated/pilot-wins.csv};
+\legend{hybrid,exhaustive}
+\end{axis}
+\end{tikzpicture}

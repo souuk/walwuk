@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": "scripts/article-generate.mjs",
+  "snapshots": [
+    {
+      "file": "phase1-phase2-preliminary.json",
+      "snapshotId": "phase1-phase2-preliminary-2026-08-12",
+      "status": "preliminary",
+      "sha256": "e1106a530d572017f9c1eef206b31229e06a710480be2fb69004cd3567e8686f"
+    }
+  ]
+}

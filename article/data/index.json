@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "snapshots": [
+    {
+      "file": "phase1-phase2-preliminary.json",
+      "status": "preliminary",
+      "approved": true
+    },
+    {
+      "file": "phase3-tranche1-preliminary.json",
+      "status": "preliminary",
+      "approved": false
+    }
+  ]
+}

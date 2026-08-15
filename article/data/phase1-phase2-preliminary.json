@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "phase1-phase2-preliminary-2026-08-12",
+  "status": "preliminary",
+  "capturedAt": "2026-08-12T20:00:00-07:00",
+  "provenance": {
+    "engineCommit": "cf2b805",
+    "documentationCommit": "9b9edf5",
+    "engineVersion": "phase2.1",
+    "evaluatorVersion": "handcrafted-v2",
+    "policyVersion": "history-v1",
+    "productionExperimentMask": 0,
+    "emscriptenVersion": "6.0.6",
+    "wasmSha256": "14c9155493d19efaed284537f259d3a43fe09c90d8b7bbe3a920a44127e82eb9",
+    "wrapperSha256": "4e802072c0c953648acc0918e401ab5461a43093a602ac3515bce5340adc4639",
+    "sourceDocuments": [
+      "docs/benchmarks/2026-08-11-maximum-strength-phase1.md",
+      "docs/benchmarks/2026-08-12-maximum-strength-phase2.md",
+      "engine-native/baselines/phase2-start.json",
+      "engine-native/baselines/phase2-pilot.json",
+      "engine-native/promotion-manifest.json"
+    ]
+  },
+  "environment": {
+    "platform": "Windows",
+    "processor": "Intel Core i5-12600KF",
+    "reportedLogicalProcessors": 16,
+    "processorWorkerLimit": 12,
+    "engineMemoryBudgetMiB": 1536,
+    "pilotScheduledJobs": 8,
+    "runtime": "browser WebAssembly and Node.js harness",
+    "timingNotes": "Fixed-time measurements vary with browser, temperature, warm-up, and concurrent work."
+  },
+  "validation": {
+    "curatedFixtures": 10,
+    "curatedDepth": 3,
+    "randomPositions": 1000000,
+    "randomShards": 8,
+    "mismatches": 0,
+    "rootMovesAudited": 1260,
+    "randomSeedPolicy": "deterministic seeded generator"
+  },
+  "phaseOne": {
+    "openingTimeToDepth": [
+      {"seconds": 5, "mode": "selective", "before": 8, "after": 10},
+      {"seconds": 5, "mode": "verified", "before": 5, "after": 6},
+      {"seconds": 15, "mode": "selective", "before": 9, "after": 11},
+      {"seconds": 15, "mode": "verified", "before": 6, "after": 6}
+    ],
+    "parallel": [
+      {"workers": 1, "aggregateNps": 1365118, "minimumDepth": 5, "wallTimeMs": 2004},
+      {"workers": 4, "aggregateNps": 6500663, "minimumDepth": 5, "wallTimeMs": 2089},
+      {"workers": 12, "aggregateNps": 22681141, "minimumDepth": 5, "wallTimeMs": 2179}
+    ],
+    "lazyOpeningProfile": {
+      "structuralWallCandidates": 3152481,
+      "preparedChildren": 393228
+    }
+  },
+  "phaseTwo": {
+    "persistence": {
+      "moveTimeMs": 1000,
+      "coldExpectedMoveDepth": 8,
+      "warmExpectedMoveDepth": 9,
+      "expectedMoveReusedNodes": 6343,
+      "samePositionReusedNodes": 9950
+    },
+    "dynamicRoot": {
+      "position": "opening",
+      "depth": 5,
+      "singleWorkerMs": 7201,
+      "eightWorkerMs": 1557,
+      "speedup": 4.63,
+      "efficiencyPercent": 57.9,
+      "promotionThresholdPercent": 60,
+      "status": "held"
+    }
+  },
+  "pilot": {
+    "protocolStatus": "preliminary",
+    "limitation": "Color-swapped return games inherited per-engine caches across the game boundary.",
+    "aggregate": {
+      "games": 2400,
+      "hybridWins": 1106,
+      "exhaustiveWins": 1277,
+      "unresolved": 17,
+      "hybridWinsPeriwinkle": 543,
+      "hybridWinsBlossom": 563,
+      "exhaustiveWinsPeriwinkle": 627,
+      "exhaustiveWinsBlossom": 650,
+      "plies": 145720,
+      "averagePlies": 60.7166666667,
+      "shortestGame": 33,
+      "longestGame": 120,
+      "hybridNodes": 39607124957,
+      "exhaustiveNodes": 56135639211
+    },
+    "controls": [
+      {"moveTimeMs": 250, "games": 1200, "hybridWins": 536, "exhaustiveWins": 659, "unresolved": 5, "averagePlies": 59.7625, "sprt": "continue"},
+      {"moveTimeMs": 1000, "games": 1200, "hybridWins": 570, "exhaustiveWins": 618, "unresolved": 12, "averagePlies": 61.6708333333, "sprt": "continue"}
+    ]
+  },
+  "solvers": {
+    "zeroWallStates": 11520,
+    "zeroWallProofReplay": true,
+    "oneTotalWallStateCeiling": 50000,
+    "oneTotalWallOutcome": "unknown"
+  },
+  "experiments": [
+    {"id": 1, "name": "delayed topology cache v2", "status": "rejected", "result": "At 1 s, preserved depth but reduced average NPS by 25%."},
+    {"id": 2, "name": "continuation/tactical-wall history v2", "status": "rejected", "result": "Lost one aggregate ply and changed two of four moves."},
+    {"id": 4, "name": "strategic wall-economy evaluator", "status": "held", "result": "Lost three aggregate plies; strength evidence required."},
+    {"id": 16, "name": "partial move selection", "status": "rejected", "result": "Lost two aggregate plies and 32% average NPS."},
+    {"id": 32, "name": "bounded quiescence", "status": "held", "result": "Lost three aggregate plies; tactical evidence required."},
+    {"id": 64, "name": "adaptive late-move reductions", "status": "held", "result": "Changed two of four moves; selective audit required."},
+    {"id": 512, "name": "reverse futility", "status": "held", "result": "Gained one aggregate ply but changed two of four moves."},
+    {"id": 1024, "name": "razoring", "status": "rejected", "result": "No depth gain and lower average NPS."},
+    {"id": 2048, "name": "ProbCut", "status": "held", "result": "Gained up to three aggregate plies; strength evidence required."},
+    {"id": 4096, "name": "history pruning", "status": "rejected", "result": "No aggregate depth gain."},
+    {"id": 8192, "name": "multi-cut", "status": "held", "result": "Gained two aggregate plies at 1 s; changed two moves."},
+    {"id": 16384, "name": "singular extension", "status": "rejected", "result": "Lost two aggregate plies."},
+    {"id": 32768, "name": "forced-defense extension", "status": "rejected", "result": "No aggregate depth gain."},
+    {"id": 65536, "name": "canonical transposition table", "status": "rejected", "result": "Median NPS fell 32% and two aggregate plies were lost."},
+    {"id": 131072, "name": "all-shortest-route candidates", "status": "held", "result": "Maximum audited regret fell from 151 to 100; median NPS cost remained 23%."},
+    {"id": 256, "name": "quantized learned value", "status": "untrained", "result": "Inference exists; no production-quality dataset or model."}
+  ]
+}

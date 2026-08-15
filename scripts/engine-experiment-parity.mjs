@@ -92,7 +92,7 @@ for (const fixture of fixtures) {
     );
   }
 }
-for (const mask of [1, 16]) {
+for (const mask of [1, 16, 262144]) {
   engine._walwuk_set_experiments(mask);
   for (const fixture of fixtures) {
     assert.deepEqual(

@@ -1,0 +1,13 @@
+\begin{tikzpicture}
+\begin{axis}[
+  ybar,bar width=5pt,width=\columnwidth,height=4.2cm,
+  ylabel={completed ply},symbolic x coords={5s-selective,5s-verified,15s-selective,15s-verified},
+  xtick=data,x tick label style={rotate=28,anchor=east,font=\scriptsize},
+  ymin=0,ymax=12,legend style={font=\scriptsize,at={(0.5,1.02)},anchor=south,legend columns=2},
+  grid=major
+]
+\addplot table[x=case,y=before,col sep=comma]{generated/time-to-depth.csv};
+\addplot table[x=case,y=after,col sep=comma]{generated/time-to-depth.csv};
+\legend{before,Phase One}
+\end{axis}
+\end{tikzpicture}

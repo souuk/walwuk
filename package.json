@@ -26,7 +26,7 @@
     "engine:test:compile": "tsc app/engine.ts app/engine-resources.ts --target ES2022 --lib ES2022,DOM --module ES2022 --moduleResolution bundler --outDir .engine-test --skipLibCheck",
     "engine:resource:test": "npm run engine:test:compile && node scripts/engine-resource-test.mjs",
     "engine:asset:test": "node scripts/engine-asset-budget.mjs",
-    "engine:test": "npm run engine:build && npm run engine:test:compile && node scripts/engine-parity.mjs && node scripts/engine-resource-test.mjs && node scripts/engine-manifest-test.mjs",
+    "engine:test": "npm run engine:build && npm run engine:test:compile && node scripts/engine-parity.mjs && node scripts/engine-resource-test.mjs && node scripts/engine-manifest-test.mjs && node scripts/engine-resume-benchmark.mjs --time-ms 250",
     "engine:test:full": "npm run engine:build && npm run engine:test:compile && node scripts/engine-parity.mjs --full && node scripts/engine-resource-test.mjs",
     "engine:test:stress": "npm run engine:build && npm run engine:test:compile && node scripts/engine-parity.mjs --full --random 100000 && node scripts/engine-resource-test.mjs",
     "engine:test:million": "npm run engine:build && npm run engine:test:compile && node scripts/engine-parity.mjs --full && node scripts/engine-parity-parallel.mjs --random 1000000 && node scripts/engine-resource-test.mjs",
@@ -40,6 +40,7 @@
     "engine:benchmark:experiments": "npm run engine:test:experiments && node scripts/engine-experiment-benchmark.mjs",
     "engine:benchmark:matrix": "npm run engine:build && npm run engine:test:compile && node scripts/engine-performance-matrix.mjs",
     "engine:benchmark:persistence": "npm run engine:build && npm run engine:test:compile && node scripts/engine-persistence-benchmark.mjs",
+    "engine:benchmark:resume": "npm run engine:build && node scripts/engine-resume-benchmark.mjs",
     "engine:audit": "npm run engine:build && npm run engine:test:compile && node scripts/engine-root-audit.mjs",
     "engine:match": "npm run engine:build && npm run engine:test:compile && node scripts/engine-match.mjs",
     "engine:match:ab": "npm run engine:test:experiments && node scripts/engine-ab-match.mjs",
@@ -55,7 +56,11 @@
     "engine:train:value": "node scripts/run-python.mjs training/train_value.py",
     "engine:solve:low-wall": "npm run engine:test:compile && node scripts/engine-low-wall-solver.mjs",
     "walper:build": "npm run engine:build && node walper/build.mjs",
-    "walper:test": "node --test walper/tests/*.test.mjs"
+    "walper:test": "node --test walper/tests/*.test.mjs",
+    "article:generate": "node scripts/article-generate.mjs && node scripts/article-generate-phase3.mjs",
+    "article:build": "node scripts/article-build.mjs",
+    "article:check": "node scripts/article-check.mjs",
+    "article:package": "node scripts/article-package.mjs"
   },
   "dependencies": {
     "react": "19.2.6",

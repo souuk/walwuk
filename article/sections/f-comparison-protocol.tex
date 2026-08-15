@@ -1,0 +1,17 @@
+\section{Planned External-Engine Comparison Protocol}
+The statement that one engine ``beats'' another will be reserved for a completed common-protocol match.
+
+\subsection{Rules adapter}
+Each engine must use the same 9$\times$9 two-player rules, jump and diagonal-jump conditions, wall coordinates, crossing and overlap rules, ten-wall reserves, immediate goal termination, and no post-win actions. Before matches, a protocol adapter must pass the common legal-action fixtures and at least 100,000 random position comparisons. Engines with irreconcilable rule differences are reported qualitatively only.
+
+\subsection{Resource controls}
+Matches use one process or equivalent worker allocation per engine, identical logical-core ceilings, and explicit memory limits. Required controls are fixed node budgets where node semantics permit, 250 ms, one second, five seconds, ten seconds, fifteen seconds, and a 180+1 clock with a fifteen-second move cap. Warm-up occurs before measurement, and caches are cleared at game boundaries but retained between moves within a game.
+
+\subsection{Opening and color control}
+Openings are deterministic, legal, and sampled from empty-board, pawn-first, balanced-wall, tactical, low-reserve, and human-derived categories. Every opening is played twice with colors exchanged. Reports separate periwinkle and blossom wins, first and return games, unresolved games, plies, remaining walls, backward pawn actions, and wall usage by phase.
+
+\subsection{Search telemetry}
+Where available, the adapter records wall-clock time, nodes or rollouts, completed depth, selective depth, principal variation, memory, and worker count. Metrics whose definitions differ remain in separate columns. The primary result is paired game score with confidence or sequential-test status. Secondary results are root regret against a longer common verifier and move agreement by position class.
+
+\subsection{Interpretation}
+A statistically positive match would support ``stronger under this protocol,'' not ``universally stronger.'' A faster time to depth supports an engineering claim only when legal coverage and evaluation are comparable. A proof solver outranks a heuristic engine on positions it proves, regardless of its NPS. All source licenses and modifications will be reported.

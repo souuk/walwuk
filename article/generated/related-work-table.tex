@@ -1,0 +1,19 @@
+% Generated file.
+\begin{table*}[t]
+\centering
+\caption{Public Quoridor search projects considered in the literature review. Evidence is not directly comparable across projects.}
+\label{tab:related-work}
+\scriptsize
+\begin{tabular}{p{0.16\textwidth}p{0.08\textwidth}p{0.16\textwidth}p{0.18\textwidth}p{0.25\textwidth}p{0.07\textwidth}}
+\toprule
+Project & Board & Language & Search & Published evidence & License \\
+\midrule
+Glendenning~\cite{glendenning2005} & 9$\times$9 & Java & iterative alpha--beta & thesis methodology; no modern common benchmark & thesis \\
+Dais--Prentzas~\cite{dais2023} & 9$\times$9 & C & alpha--beta, TT & competition winner; no NPS/depth protocol & MIT \\
+Gorisanson~\cite{gorisanson2024} & 9$\times$9 & JavaScript & heuristic MCTS & rollout counts and paired match tables & MIT \\
+Borowski~\cite{borowski2021} & 9$\times$9 & C++ & vanilla MCTS & qualitative competence; no common benchmark & repository license \\
+Slatton~\cite{slatton2026solver} & reduced & Rust & proof search, retrograde & reproducible solved small boards; 9$\times$9 out of scope & MIT \\
+\walwuk{} & 9$\times$9 & C++/Wasm & hybrid alpha--beta & parity, time-to-depth, root audits, preliminary self-play & MIT \\
+\bottomrule
+\end{tabular}
+\end{table*}
