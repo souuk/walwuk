@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": "scripts/article-generate-selective-validation.mjs",
+  "snapshot": {
+    "file": "selective-validation-preliminary.json",
+    "snapshotId": "selective-validation-2026-08-15",
+    "status": "preliminary",
+    "sha256": "dd37ee374f3311b47c0db00c7d031a4f528e1aa1ec868835896d21bc6860c45d"
+  }
+}

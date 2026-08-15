@@ -43,6 +43,23 @@ The experiment registry in \cref{tab:experiments} records failures rather than s
 \subsection{Phase Three engineering tranche}
 The first Phase Three tranche retained two exact hot-path changes and added same-root iteration continuation. The latter reports the restored completed depth explicitly and is bypassed by strict fixed-depth and fixed-node searches. It passed clear-state and strict-search checks, but its short fixed-time depth gain varied across repeated runs and is therefore not yet reported as a strength or performance improvement.
 
-\Cref{tab:phase-three-pruning} records the first fixed-node selective screens. ProbCut scored \PhaseThreeProbCutWins--\PhaseThreeProbCutBaselineWins and multi-cut scored \PhaseThreeMultiCutWins--\PhaseThreeMultiCutBaselineWins. Both reached lower average depth than their baselines despite modestly higher reported NPS. They were rejected because faster node counting did not translate into deeper or stronger search. Adaptive LMR subsequently led \PhaseThreeAdaptiveLmrWins--\PhaseThreeAdaptiveLmrBaselineWins{} over \PhaseThreeAdaptiveLmrGames{} games and increased average depth from \PhaseThreeAdaptiveLmrBaselineDepth{} to \PhaseThreeAdaptiveLmrDepth{}. This is promising preliminary evidence, but it remains below the planned game volume and has not passed fixed-time testing.
+\Cref{tab:phase-three-pruning} records the first fixed-node selective screens. ProbCut scored \PhaseThreeProbCutWins--\PhaseThreeProbCutBaselineWins and multi-cut scored \PhaseThreeMultiCutWins--\PhaseThreeMultiCutBaselineWins. Both reached lower average depth than their baselines despite modestly higher reported NPS. They were rejected because faster node counting did not translate into deeper or stronger search. Adaptive LMR subsequently led \PhaseThreeAdaptiveLmrWins--\PhaseThreeAdaptiveLmrBaselineWins{} over \PhaseThreeAdaptiveLmrGames{} games and increased average depth from \PhaseThreeAdaptiveLmrBaselineDepth{} to \PhaseThreeAdaptiveLmrDepth{}. At that tranche, this was promising preliminary evidence below the planned game volume; the follow-up below adds fixed-time and accuracy audits.
 
 \input{generated/phase-three-pruning-table.tex}
+\subsection{Selective-search validation}
+A larger follow-up separated playing strength from fixed-depth accuracy.
+Aggressive adaptive LMR scored \AggressiveLmrFixedNodeScore{} across
+\AggressiveLmrFixedNodeGames{} fixed-node games, but increased summed
+depth-five root regret from \SelectiveBaselineRegret{} to
+\AggressiveLmrRegret{} over 50 random positions. It therefore remains held
+despite its positive match score.
+
+The guarded variant reduced summed regret to \GuardedLmrRegret{}, scored
+\GuardedLmrFixedNodeScore{} over \GuardedLmrFixedNodeGames{} fixed-node games,
+and scored \GuardedLmrTimedScore{} over \GuardedLmrTimedGames{} games at
+250 ms per move. Those timed games averaged \GuardedLmrTimedAveragePlies{}
+plies. Neither sequential test crossed a promotion boundary, and representative
+timed benchmarks showed no completed-depth gain. The production mask therefore
+remains zero.
+
+\input{generated/selective-validation-table.tex}

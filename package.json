@@ -50,6 +50,7 @@
     "engine:tournament": "npm run engine:build && node scripts/engine-tournament.mjs",
     "engine:sprt": "node scripts/engine-sprt.mjs",
     "engine:campaign": "npm run engine:build && npm run engine:test:compile && node scripts/engine-campaign.mjs",
+    "engine:campaign:test": "node scripts/engine-campaign-test.mjs",
     "engine:campaign:report": "node scripts/engine-campaign-report.mjs",
     "engine:data": "npm run engine:build && npm run engine:test:compile && node scripts/generate-training-data.mjs",
     "engine:train:policy": "node scripts/run-python.mjs training/train_policy.py",
@@ -57,7 +58,7 @@
     "engine:solve:low-wall": "npm run engine:test:compile && node scripts/engine-low-wall-solver.mjs",
     "walper:build": "npm run engine:build && node walper/build.mjs",
     "walper:test": "node --test walper/tests/*.test.mjs",
-    "article:generate": "node scripts/article-generate.mjs && node scripts/article-generate-phase3.mjs",
+    "article:generate": "node scripts/article-generate.mjs && node scripts/article-generate-phase3.mjs && node scripts/article-generate-selective-validation.mjs",
     "article:build": "node scripts/article-build.mjs",
     "article:check": "node scripts/article-check.mjs",
     "article:package": "node scripts/article-package.mjs"

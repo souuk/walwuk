@@ -22,9 +22,9 @@ let draws = 0;
 for (const file of files) {
   const value = JSON.parse(await readFile(file, "utf8"));
   const score = value.score ?? value;
-  wins += score.challenger ?? 0;
-  losses += score.exhaustive ?? 0;
-  draws += score.unresolved ?? 0;
+  wins += score.challenger ?? score.candidate ?? score.first ?? 0;
+  losses += score.exhaustive ?? score.baseline ?? score.second ?? 0;
+  draws += score.unresolved ?? score.draws ?? 0;
 }
 const decisive = wins + losses;
 const logLikelihood = wins * Math.log(p1 / p0) +

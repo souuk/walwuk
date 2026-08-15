@@ -59,6 +59,9 @@ const challengerMask = Math.max(0, Number.parseInt(option("challenger-mask", "0"
 const matchMode = option("match-mode", "exhaustive");
 const baselineMask = Math.max(0, Number.parseInt(option("baseline-mask", "0"), 10));
 const nodeLimit = Math.max(0, Number.parseInt(option("nodes", "0"), 10));
+const maxGames = Math.max(0, Number.parseInt(option("max-games", "0"), 10));
+if (maxGames % 2 !== 0) throw new Error("--max-games must be even for paired games.");
+const openingOffset = Math.max(0, Number.parseInt(option("opening-offset", "0"), 10));
 const challengerModule = option("module", "");
 const timeControls = option("time-controls", "250,1000")
   .split(",")
@@ -134,6 +137,8 @@ const normalizedPreviousSettings = checkpoint.settings ? {
   matchMode: checkpoint.settings.matchMode ?? "exhaustive",
   baselineMask: checkpoint.settings.baselineMask ?? 0,
   nodeLimit: checkpoint.settings.nodeLimit ?? 0,
+  maxGames: checkpoint.settings.maxGames ?? 0,
+  openingOffset: checkpoint.settings.openingOffset ?? 0,
   challengerModule: checkpoint.settings.challengerModule ?? null,
 } : null;
 const requestedSettings = {
@@ -145,6 +150,8 @@ const requestedSettings = {
   matchMode,
   baselineMask,
   nodeLimit,
+  maxGames,
+  openingOffset,
   challengerModule: challengerModule || null,
 };
 if (checkpoint.completedJobs > 0 && normalizedPreviousSettings &&
@@ -180,6 +187,7 @@ checkpoint.settings = {
 
 let stopRequested = false;
 let nextJob = checkpoint.nextJob;
+const maximumJobs = maxGames > 0 ? Math.ceil(maxGames / 2) : 0;
 const startingGames = checkpoint.games;
 const startingPositions = checkpoint.positions;
 const startingCompletedJobs = checkpoint.completedJobs;
@@ -277,7 +285,7 @@ async function runJob(jobIndex) {
       "--max-plies", `${maxPlies}`,
       "--candidate-mask", `${challengerMask}`,
       "--baseline-mask", `${baselineMask}`,
-      "--opening-offset", `${jobIndex}`,
+      "--opening-offset", `${openingOffset + jobIndex}`,
       "--json-output", outputPath,
     ]
     : [
@@ -288,7 +296,7 @@ async function runJob(jobIndex) {
       "--max-plies", `${maxPlies}`,
       "--challenger", challenger,
       "--challenger-mask", `${challengerMask}`,
-      "--opening-offset", `${jobIndex}`,
+      "--opening-offset", `${openingOffset + jobIndex}`,
       "--json-output", outputPath,
     ];
   if (challengerModule) argumentsList.push("--module", challengerModule);
@@ -310,6 +318,11 @@ async function runJob(jobIndex) {
 
 async function worker() {
   while (!stopRequested) {
+    if (maximumJobs > 0 && nextJob >= maximumJobs) {
+      stopRequested = true;
+      checkpoint.stopSignal = "max-games";
+      break;
+    }
     const jobIndex = nextJob++;
     let completed = false;
     for (let attempt = 0; attempt < 3 && !completed && !stopRequested; ++attempt) {
@@ -370,6 +383,7 @@ const summary = {
     Math.max(1, checkpoint.searchTimeMs)),
   coordinatorPeakRssBytes: process.resourceUsage().maxRSS * 1024,
   stoppedForStorage: checkpoint.generatedBytes >= STOP_BYTES,
+  stoppedForGameLimit: maxGames > 0 && checkpoint.games >= maxGames,
   stoppedForInfrastructure: checkpoint.infrastructureFailure === true,
 };
 await writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);

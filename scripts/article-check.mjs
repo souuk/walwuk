@@ -39,6 +39,14 @@ if (phaseThreeGenerator.status !== 0) {
     phaseThreeGenerator.stdout.trim() || "Phase Three generated files are stale.");
 }
 
+const selectiveGenerator = spawnSync(process.execPath, [
+  path.join(root, "scripts", "article-generate-selective-validation.mjs"), "--check"
+], {cwd: root, encoding: "utf8"});
+if (selectiveGenerator.status !== 0) {
+  errors.push(selectiveGenerator.stderr.trim() ||
+    selectiveGenerator.stdout.trim() ||
+    "Selective-validation generated files are stale.");
+}
 const files = (await filesUnder(article)).filter((file) => !file.includes(`${path.sep}build${path.sep}`) && !file.endsWith(".zip"));
 const textFiles = files.filter((file) => /\.(tex|bib|md|json|csv)$/.test(file));
 let corpus = "";

@@ -103,7 +103,7 @@ for (const mask of [1, 16, 262144]) {
   }
 }
 for (const mask of [
-  512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072,
+  512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 524288, 1048576,
 ]) {
   engine._walwuk_set_experiments(mask);
   for (const fixture of fixtures) {
@@ -130,7 +130,7 @@ assert.notEqual(winner(replay), null, "proof certificate must reach a goal");
 
 for (const mask of [
   1, 2, 4, 8, 16, 32, 64, 128, 512, 1024, 2048, 4096, 8192,
-  16384, 32768, 65536, 131072,
+  16384, 32768, 65536, 131072, 524288, 1048576,
 ]) {
   engine._walwuk_set_experiments(mask);
   const fixed = analyze(fixtures[0].state, 1);

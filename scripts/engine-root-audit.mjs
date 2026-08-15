@@ -35,6 +35,10 @@ const modulePath = option("module", "");
 const experimentMask = Math.max(0, Number.parseInt(option("experiment-mask", "0"), 10));
 const randomPositions = Math.max(0, Number.parseInt(option("random", "0"), 10));
 const seed = Number.parseInt(option("seed", "1831565813"), 10) >>> 0;
+const fixtureFilter = new Set(option("fixtures", "")
+  .split(",")
+  .map((name) => name.trim())
+  .filter(Boolean));
 let beginSearch = nativeBeginSearch;
 let rootMoves = nativeRootMoves;
 let searchRootMove = nativeSearchRootMove;
@@ -65,7 +69,7 @@ if (modulePath) {
 }
 const records = [];
 const auditPositions = [
-  ...fixtures,
+  ...fixtures.filter(({name}) => fixtureFilter.size === 0 || fixtureFilter.has(name)),
   ...[...iterateRandomPositions(randomPositions, seed)].map((state, index) => ({
     name: `random-${index}`,
     state,

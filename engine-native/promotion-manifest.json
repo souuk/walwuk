@@ -58,7 +58,7 @@
     "64": {
       "name": "adaptive late-move reductions",
       "status": "held",
-      "reason": "a 500-game paired 50000-node screen led 267-233 and increased average depth from 8.23 to 8.66; promising early evidence, but below the planned statistical promotion volume and fixed-time gates"
+      "reason": "led 1018-981-1 over 2000 games at 10000 nodes and 64-35-1 over 100 games at 250 ms, but increased depth-five root regret from 1079 to 1300 across 50 random positions; held for accuracy despite promising self-play"
     },
     "128": {
       "name": "topology-position correction history",
@@ -119,6 +119,16 @@
       "name": "auxiliary topology distance cache v3",
       "status": "rejected",
       "reason": "revision one reduced 250 ms median NPS by 27%; delayed admission and cheaper reconstruction still reduced one-second median NPS by 11%, changed two of four preferred moves, and produced no aggregate depth gain; a topology-centered position design requires a new experiment identity"
+    },
+    "524288": {
+      "name": "conservative adaptive late-move reductions",
+      "status": "rejected",
+      "reason": "matched baseline regret exactly across 50 depth-five positions but reduced the four-position 250 ms average depth from 8.0 to 7.5 and changed two timed moves"
+    },
+    "1048576": {
+      "name": "guarded adaptive late-move reductions",
+      "status": "held",
+      "reason": "reduced depth-five root regret from 1079 to 1059, led 264-236 at 10000 nodes and 62-38 at 250 ms, but both SPRTs remain inconclusive and representative benchmarks gained no completed depth"
     }
   },
   "promotionRequirements": {

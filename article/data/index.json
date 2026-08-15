@@ -10,6 +10,11 @@
       "file": "phase3-tranche1-preliminary.json",
       "status": "preliminary",
       "approved": false
+    },
+    {
+      "file": "selective-validation-preliminary.json",
+      "status": "preliminary",
+      "approved": false
     }
   ]
 }

@@ -69,6 +69,8 @@ constexpr uint32_t kExperimentForcedDefenseExtension = 1U << 15;
 constexpr uint32_t kExperimentCanonicalTranspositions = 1U << 16;
 constexpr uint32_t kExperimentAllShortestRoutes = 1U << 17;
 constexpr uint32_t kExperimentTopologyV3 = 1U << 18;
+constexpr uint32_t kExperimentConservativeAdaptiveReductions = 1U << 19;
+constexpr uint32_t kExperimentGuardedAdaptiveReductions = 1U << 20;
 constexpr std::size_t kCorrectionHistorySize = 1U << 12;
 constexpr std::size_t kTopologyCacheSize = 1U << 14;
 
@@ -3073,7 +3075,41 @@ class Search {
           ++reduced_searches_;
           int reduction = 1;
           if (depth >= 6 && searched_count > 10) reduction = 2;
-          if ((experiment_mask & kExperimentAdaptiveReductions) != 0) {
+          if ((experiment_mask &
+               kExperimentConservativeAdaptiveReductions) != 0) {
+            const int history =
+                HistoryValue(position->turn, MoveHistoryIndex(move));
+            const bool route_tactical =
+                IsWallMove(move) &&
+                (child_paths[opponent].distance != paths[opponent].distance ||
+                 child_paths[moving_player].distance !=
+                     paths[moving_player].distance);
+            const bool reduce_deep_quiet =
+                depth >= 6 && searched_count > 12 && history < 4000 &&
+                (!IsWallMove(move) || !route_tactical);
+            const bool reduce_late_quiet_wall =
+                depth >= 4 && searched_count > 16 && IsWallMove(move) &&
+                !route_tactical && history < 0;
+            reduction =
+                reduce_deep_quiet || reduce_late_quiet_wall ? 2 : 1;
+            if (IsRaceCritical(paths) || history > 4000) reduction = 1;
+          } else if ((experiment_mask &
+                      kExperimentGuardedAdaptiveReductions) != 0) {
+            const int history =
+                HistoryValue(position->turn, MoveHistoryIndex(move));
+            const bool route_tactical =
+                IsWallMove(move) &&
+                (child_paths[opponent].distance != paths[opponent].distance ||
+                 child_paths[moving_player].distance !=
+                     paths[moving_player].distance);
+            reduction = 1 + (depth >= 6) + (searched_count > 12) +
+                        (IsWallMove(move) && history < 0);
+            if (route_tactical || IsRaceCritical(paths) || history > 4000) {
+              --reduction;
+            }
+            reduction = std::clamp(reduction, 1, 2);
+          } else if ((experiment_mask &
+                      kExperimentAdaptiveReductions) != 0) {
             const int history =
                 HistoryValue(position->turn, MoveHistoryIndex(move));
             reduction = 1 + (depth >= 6) + (searched_count > 12) +

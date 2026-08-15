@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "selective-validation-2026-08-15",
+  "status": "preliminary",
+  "engineBaseCommit": "2e700e6f41f85719a91481a7fc00d6c3e53c33d3",
+  "engineArtifactSha256": "67273e5126777118008f025fd43c81da41edc235c36fcdde3d2a1701387302b1",
+  "hardware": {
+    "processor": "Intel Core i5-12600KF",
+    "reportedLogicalProcessors": 16,
+    "eligibleLogicalProcessors": 12,
+    "concurrentMatchJobs": 5,
+    "engineMemoryBudgetBytes": 1610612736,
+    "sampledProcessWorkingSetBytes": 667942912
+  },
+  "adaptiveLmr": {
+    "experimentMask": 64,
+    "status": "held",
+    "fixedNode": {
+      "nodesPerMove": 10000,
+      "games": 2000,
+      "candidateWins": 1018,
+      "baselineWins": 981,
+      "unresolved": 1,
+      "candidatePeriwinkleWins": 530,
+      "candidateBlossomWins": 488,
+      "averagePlies": 54.977,
+      "sprtStatus": "continue",
+      "sourceSha256": "15cdf5d2c666633f72f8735588eb4770ab2a035f24cc30a43f9607a5e04c6773"
+    },
+    "fixedTime": {
+      "millisecondsPerMove": 250,
+      "games": 100,
+      "candidateWins": 64,
+      "baselineWins": 35,
+      "unresolved": 1,
+      "averagePlies": 53.63,
+      "sprtStatus": "continue",
+      "sourceSha256": "19e50eaa3b74ea31987c4cda5e70cf58861e9e000632ae101b47c21fe4d1545f"
+    },
+    "rootAudit": {
+      "depth": 5,
+      "positions": 50,
+      "candidateTotalRegret": 1300,
+      "baselineTotalRegret": 1079,
+      "candidateBetter": 2,
+      "candidateWorse": 5,
+      "equal": 43
+    }
+  },
+  "guardedLmr": {
+    "experimentMask": 1048576,
+    "status": "held",
+    "fixedNode": {
+      "nodesPerMove": 10000,
+      "games": 500,
+      "candidateWins": 264,
+      "baselineWins": 236,
+      "unresolved": 0,
+      "candidatePeriwinkleWins": 146,
+      "candidateBlossomWins": 118,
+      "averagePlies": 54.996,
+      "sprtStatus": "continue",
+      "sourceSha256": "4b9639a5d0b5865b1292306d38445b553c5c8a83ced36eb0591f3543c21bcbe8"
+    },
+    "fixedTime": {
+      "millisecondsPerMove": 250,
+      "games": 100,
+      "candidateWins": 62,
+      "baselineWins": 38,
+      "unresolved": 0,
+      "candidatePeriwinkleWins": 34,
+      "candidateBlossomWins": 28,
+      "baselinePeriwinkleWins": 22,
+      "baselineBlossomWins": 16,
+      "averagePlies": 53.36,
+      "sprtStatus": "continue",
+      "sourceSha256": "c1015aa73690ec320cf2efbee6b8ea17f2dc910b4cd8f4efa11d383f97288ae3"
+    },
+    "rootAudit": {
+      "depth": 5,
+      "positions": 50,
+      "candidateTotalRegret": 1059,
+      "baselineTotalRegret": 1079,
+      "candidateBetter": 2,
+      "candidateWorse": 1,
+      "equal": 47
+    }
+  }
+}
