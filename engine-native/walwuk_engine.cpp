@@ -47,7 +47,7 @@ constexpr int kMaximumRaceExtensions = 2;
 constexpr int kPawnStateCount = kSquareCount * kSquareCount * 2;
 constexpr std::size_t kZeroWallCacheSize = 64;
 constexpr uint64_t kHashSeed = 0x6a09e667f3bcc909ULL;
-constexpr const char* kEngineVersion = "phase2.1";
+constexpr const char* kEngineVersion = "phase3.0-dev";
 constexpr const char* kEvaluatorVersion = "handcrafted-v2";
 constexpr const char* kPolicyVersion = "history-v1";
 constexpr uint32_t kExperimentTopologyCache = 1U << 0;
@@ -68,6 +68,7 @@ constexpr uint32_t kExperimentSingularExtension = 1U << 14;
 constexpr uint32_t kExperimentForcedDefenseExtension = 1U << 15;
 constexpr uint32_t kExperimentCanonicalTranspositions = 1U << 16;
 constexpr uint32_t kExperimentAllShortestRoutes = 1U << 17;
+constexpr uint32_t kExperimentTopologyV3 = 1U << 18;
 constexpr std::size_t kCorrectionHistorySize = 1U << 12;
 constexpr std::size_t kTopologyCacheSize = 1U << 14;
 
@@ -384,6 +385,21 @@ struct TopologyCacheEntry {
 };
 
 std::array<TopologyCacheEntry, kTopologyCacheSize> topology_cache;
+
+// Phase-three topology entries deliberately exclude pawn squares. A wall
+// layout defines the board graph, so one pair of reverse distance fields can
+// serve every pawn position reached while that topology remains unchanged.
+// Admission occurs only after the layout is encountered again; one-off wall
+// children continue using the cheaper direct path search.
+struct TopologyV3Entry {
+  uint64_t horizontal_walls = 0;
+  uint64_t vertical_walls = 0;
+  std::array<std::array<uint8_t, kSquareCount>, 2> distances{};
+  uint8_t observations = 0;
+  bool ready = false;
+};
+
+std::array<TopologyV3Entry, kTopologyCacheSize> topology_v3_cache;
 uint32_t experiment_mask = 0;
 
 struct MoveList {
@@ -394,14 +410,16 @@ struct MoveList {
 };
 
 struct SearchMove {
-  uint16_t move = kNoMove;
+  uint16_t move;
 };
 
 struct SearchMoveList {
   int count = 0;
-  std::array<SearchMove, 136> moves{};
-  std::array<uint16_t, 136> order{};
-  std::array<int, 136> priorities{};
+  // Only [0, count) is ever observed. Leaving the fixed backing storage
+  // uninitialized avoids clearing 1 KiB of stack data at every search node.
+  std::array<SearchMove, 136> moves;
+  std::array<uint16_t, 136> order;
+  std::array<int, 136> priorities;
 
   void Push(uint16_t move) {
     moves[count] = {move};
@@ -462,6 +480,7 @@ struct AnalysisResult {
   uint64_t canonical_transposition_hits = 0;
   uint64_t topology_cache_hits = 0;
   uint64_t topology_repairs = 0;
+  int resumed_depth = 0;
   int proof_outcome = 0;
   int proof_distance = 0;
   int nps = 0;
@@ -485,6 +504,19 @@ std::array<ZeroWallCacheEntry, kZeroWallCacheSize> zero_wall_cache;
 uint8_t transposition_generation = 0;
 std::string exported_result;
 
+struct SearchResumeState {
+  Position root{};
+  std::array<uint16_t, kMaximumPvLength> pv{};
+  int score = 0;
+  int depth = 0;
+  int pv_length = 0;
+  int score_volatility = 75;
+  int root_index = 0;
+  int root_count = 1;
+  uint16_t best_move = kNoMove;
+  bool valid = false;
+};
+
 struct EngineContext {
   std::array<std::array<int, kMoveHistorySize>, 2> history{};
   std::array<std::array<uint16_t, 2>, kMaximumSearchPly> killers{};
@@ -493,6 +525,7 @@ struct EngineContext {
   std::array<std::array<uint16_t, kMoveHistorySize>, 2> countermoves{};
   std::array<std::array<int16_t, 128>, 2> tactical_wall_history{};
   std::array<int16_t, kCorrectionHistorySize> correction_history{};
+  std::array<SearchResumeState, 2> resume{};
   Position last_root{};
   bool has_last_root = false;
   uint64_t searches = 0;
@@ -622,6 +655,7 @@ void ClearEngineContext() {
   }
   path_cache.fill({});
   topology_cache.fill({});
+  topology_v3_cache.fill({});
   zero_wall_cache.fill({});
   transposition_generation = 0;
   active_topology_cache_hits = 0;
@@ -1058,10 +1092,17 @@ std::size_t PathCacheIndex(const Position& position, int player) {
   return static_cast<std::size_t>(key) & (kPathCacheSize - 1);
 }
 
+bool TryTopologyV3Path(const Position& position, int player,
+                       PathResult* result);
+
 PathResult ShortestPath(const Position& position, int player,
                         bool all_shortest_paths = false) {
   if (all_shortest_paths) {
     return ComputeShortestPath(position, player, true);
+  }
+  if ((experiment_mask & kExperimentTopologyV3) != 0) {
+    PathResult cached;
+    if (TryTopologyV3Path(position, player, &cached)) return cached;
   }
   if (!path_cache_enabled) {
     return ComputeShortestPath(position, player, false);
@@ -1113,6 +1154,69 @@ void ComputeTopologyDistances(
     frontier = Without(Expand(position, frontier), visited);
     visited = visited | frontier;
   }
+}
+
+TopologyV3Entry* ObserveTopologyV3(const Position& position) {
+  TopologyV3Entry& entry =
+      topology_v3_cache[TopologyCacheIndex(position)];
+  const bool matches =
+      entry.horizontal_walls == position.horizontal_walls &&
+      entry.vertical_walls == position.vertical_walls;
+  if (!matches) {
+    entry = {};
+    entry.horizontal_walls = position.horizontal_walls;
+    entry.vertical_walls = position.vertical_walls;
+  }
+  if (!entry.ready && ++entry.observations >= 8) {
+    ComputeTopologyDistances(position, 0, &entry.distances[0]);
+    ComputeTopologyDistances(position, 1, &entry.distances[1]);
+    entry.ready = true;
+    ++active_topology_repairs;
+  }
+  return entry.ready ? &entry : nullptr;
+}
+
+bool TryTopologyV3Path(const Position& position, int player,
+                       PathResult* result) {
+  TopologyV3Entry* entry = ObserveTopologyV3(position);
+  if (entry == nullptr) return false;
+  ++active_topology_cache_hits;
+  const auto& distances = entry->distances[player];
+  int current = position.pawns[player];
+  result->distance = distances[current];
+  if (result->distance >= 99) return true;
+  for (int distance = result->distance; distance > 0; --distance) {
+    const int row = current / kBoardSize;
+    const int column = current % kBoardSize;
+    const std::array<int, 4> candidates = {
+        row > 0 ? current - kBoardSize : -1,
+        column > 0 ? current - 1 : -1,
+        column + 1 < kBoardSize ? current + 1 : -1,
+        row + 1 < kBoardSize ? current + kBoardSize : -1,
+    };
+    int next = -1;
+    for (const int candidate : candidates) {
+      if (candidate >= 0 && !Blocked(position, current, candidate) &&
+          distances[candidate] == distance - 1) {
+        next = candidate;
+        break;
+      }
+    }
+    if (next < 0) {
+      *result = {};
+      return true;
+    }
+    AddBlockingWallCandidates(current, next, result);
+    current = next;
+  }
+  return true;
+}
+
+int TopologyV3Distance(const Position& position, int player) {
+  TopologyV3Entry* entry = ObserveTopologyV3(position);
+  if (entry == nullptr) return -1;
+  ++active_topology_cache_hits;
+  return entry->distances[player][position.pawns[player]];
 }
 
 int RecomputeTopologyDistance(
@@ -1227,6 +1331,10 @@ int CachedTopologyDistance(const Position& position, int player) {
 }
 
 int ShortestDistance(const Position& position, int player) {
+  if ((experiment_mask & kExperimentTopologyV3) != 0) {
+    const int cached = TopologyV3Distance(position, player);
+    if (cached >= 0) return cached;
+  }
   if ((experiment_mask & kExperimentTopologyCache) != 0) {
     const int cached = CachedTopologyDistance(position, player);
     if (cached >= 0) return cached;
@@ -1953,6 +2061,7 @@ std::string ResultJson(const AnalysisResult& result) {
          << result.canonical_transposition_hits
          << ",\"topologyCacheHits\":" << result.topology_cache_hits
          << ",\"topologyRepairs\":" << result.topology_repairs
+         << ",\"resumedDepth\":" << result.resumed_depth
          << ",\"engineVersion\":\"" << kEngineVersion << "\""
          << ",\"evaluatorVersion\":\""
          << (learned_value.valid &&
@@ -2038,6 +2147,7 @@ class Search {
     active_topology_cache_hits = 0;
     active_topology_repairs = 0;
     completed_.selective = mode_ == SearchMode::kSelective;
+    RestoreResume();
     for (auto& ply_killers : local_killers_) {
       ply_killers = {kNoMove, kNoMove};
     }
@@ -2063,8 +2173,13 @@ class Search {
     }
     std::array<PathResult, 2> root_paths = {
         ShortestPath(initial_, 0), ShortestPath(initial_, 1)};
-    completed_.score = StaticEvaluation(initial_, root_paths);
-    for (int depth = 1; depth <= max_depth_; ++depth) {
+    if (!resumed_) completed_.score = StaticEvaluation(initial_, root_paths);
+    const int first_depth = resumed_ ? completed_.depth + 1 : 1;
+    if (all_shortest_paths_ && first_depth > 1) {
+      root_paths = {ShortestPath(initial_, 0, true),
+                    ShortestPath(initial_, 1, true)};
+    }
+    for (int depth = first_depth; depth <= max_depth_; ++depth) {
       if (DeadlineReached()) {
         timed_out_ = true;
         break;
@@ -2116,6 +2231,7 @@ class Search {
         completed_.depth >= max_depth_
             ? "depth"
             : node_limit_ > 0 && nodes_ >= node_limit_ ? "nodes" : "time";
+    SaveResume();
     return completed_;
   }
 
@@ -2210,6 +2326,53 @@ class Search {
 
  private:
   using Clock = std::chrono::steady_clock;
+
+  bool SameResumeRoot(const Position& root) const {
+    return root.pawns == initial_.pawns &&
+           root.walls_left == initial_.walls_left &&
+           root.turn == initial_.turn &&
+           root.horizontal_walls == initial_.horizontal_walls &&
+           root.vertical_walls == initial_.vertical_walls;
+  }
+
+  void RestoreResume() {
+    if (strict_horizon_ || node_limit_ > 0 || time_ms_ < 0) return;
+    const SearchResumeState& resume =
+        engine_context.resume[static_cast<int>(mode_)];
+    if (!resume.valid || !SameResumeRoot(resume.root) ||
+        resume.root_index != root_index_ || resume.root_count != root_count_ ||
+        resume.depth <= 0 || resume.depth >= max_depth_ ||
+        resume.best_move == kNoMove) {
+      return;
+    }
+    completed_.score = resume.score;
+    completed_.depth = resume.depth;
+    completed_.best_move = resume.best_move;
+    completed_.pv = resume.pv;
+    completed_.pv_length = resume.pv_length;
+    completed_.resumed_depth = resume.depth;
+    score_volatility_ = resume.score_volatility;
+    resumed_ = true;
+  }
+
+  void SaveResume() {
+    if (strict_horizon_ || node_limit_ > 0 || time_ms_ < 0 ||
+        completed_.depth <= 0 || completed_.best_move == kNoMove) {
+      return;
+    }
+    SearchResumeState& resume =
+        engine_context.resume[static_cast<int>(mode_)];
+    resume.root = initial_;
+    resume.score = completed_.score;
+    resume.depth = completed_.depth;
+    resume.best_move = completed_.best_move;
+    resume.pv = completed_.pv;
+    resume.pv_length = completed_.pv_length;
+    resume.score_volatility = score_volatility_;
+    resume.root_index = root_index_;
+    resume.root_count = root_count_;
+    resume.valid = true;
+  }
 
   bool DeadlineReached() const {
     if (node_limit_ > 0 && nodes_ >= node_limit_) return true;
@@ -2424,7 +2587,7 @@ class Search {
         MakeMove(&child, move);
         priority +=
             (paths[position.turn].distance -
-             ShortestPath(child, position.turn).distance) * 160;
+             ShortestDistance(child, position.turn)) * 160;
       } else {
         const int player = position.turn;
         const int id = WallId(move);
@@ -3015,6 +3178,7 @@ class Search {
   bool strict_horizon_;
   bool solve_zero_wall_;
   bool all_shortest_paths_;
+  bool resumed_ = false;
   Clock::time_point started_;
   Clock::time_point last_report_;
   uint64_t nodes_ = 0;

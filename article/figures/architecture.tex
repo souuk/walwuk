@@ -1,0 +1,18 @@
+\begin{tikzpicture}[
+  node distance=3.5mm and 4.5mm,
+  box/.style={draw,rounded corners,align=center,font=\scriptsize,minimum height=5.8mm,inner xsep=3pt},
+  arrow/.style={-{Latex[length=1.5mm]},thin}
+]
+\node[box,fill=gray!10] (ui) {React / extension UI};
+\node[box,fill=gray!10,right=of ui] (coord) {TypeScript\\coordinator};
+\node[box,fill=blue!10,below right=of coord] (main) {selective\\main lane};
+\node[box,fill=green!10,above right=of coord] (verify) {exhaustive\\verifier};
+\node[box,fill=orange!10,right=of main,yshift=6mm] (native) {C++ / Wasm workers\\TT + path operations};
+\node[box,fill=gray!10,right=of native] (result) {provisional /\\verified result};
+\draw[arrow] (ui) -- (coord);
+\draw[arrow] (coord) -- (main);
+\draw[arrow] (coord) -- (verify);
+\draw[arrow] (main) -- (native);
+\draw[arrow] (verify) -- (native);
+\draw[arrow] (native) -- (result);
+\end{tikzpicture}

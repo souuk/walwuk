@@ -1,0 +1,13 @@
+\section{Engine Architecture}
+The user interfaces are written in React and TypeScript. Analysis runs outside the UI thread: a TypeScript coordinator serializes the position once, dispatches root work to persistent Web Workers, and communicates with a C++ engine compiled through Emscripten to WebAssembly~\cite{emscriptenModularized,wasmCore}. GitHub Pages and the \walper{} extension consume byte-identical engine artifacts in the recorded checkpoint.
+
+\begin{figure}[t]
+\centering
+\input{figures/architecture.tex}
+\caption{Hybrid analysis architecture. The selective lane searches deeper; the verifier searches every legal root action to a shallower common depth.}
+\label{fig:architecture}
+\end{figure}
+
+The main lane uses selective internal wall generation, reductions, and extensions to provide a deeper provisional principal variation. The verifier assigns every legal root move an exhaustive score at \verifiedDepth. A main result is not described as verified merely because one reduced line reaches \selDepth. Contradictory exhaustive evidence overrides the provisional recommendation.
+
+Workers persist across bounded analysis epochs and retain compatible TT entries, move histories, and principal variations. A board change clears the visible suggestion immediately, while an expected continuation may reuse internal analysis. At most $\lfloor0.75C\rfloor$ heavy workers are scheduled for $C$ reported logical processors, and the count is reduced when the explicit engine-memory budget is tighter. Browser APIs cannot enforce an exact whole-system utilization percentage; the policy limits resources the application can observe and allocate.

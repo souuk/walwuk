@@ -23,7 +23,7 @@ function integerOption(name, fallback, minimum = 0) {
 
 const games = integerOption("games", 8, 2);
 const moveMs = Math.min(15_000, integerOption("move-ms", 25, 1));
-const nodeLimit = integerOption("nodes", 0);
+const nodeLimit = integerOption("nodes", integerOption("node-limit", 0));
 const maxDepth = integerOption("max-depth", 20, 1);
 const maxPlies = integerOption("max-plies", 120, 1);
 const openingOffset = integerOption("opening-offset", 0);

@@ -1,0 +1,12 @@
+\section{Background and Related Work}
+At a node with legal actions $A(s)$, negamax searches the value
+\begin{equation}
+V(s,d)=\max_{a\in A(s)}-V(T(s,a),d-1),
+\end{equation}
+where $T$ applies an action and $d$ is the remaining nominal depth. Alpha--beta bounds avoid visiting branches that cannot alter the result; iterative deepening supplies ordering information and a usable result when time expires. A transposition table (TT) stores bounds for positions reached by different move orders. Principal-variation search, aspiration windows, history ordering, and selective reductions are established ingredients of high-performance adversarial search~\cite{stockfishSearch,stockfishTT}.
+
+Glendenning developed an iterative-deepening alpha--beta Quoridor program and a domain-specific evaluation~\cite{glendenning2005}. Several public engines provide useful reference points. Dais and Prentzas publish a C alpha--beta engine with iterative deepening, Zobrist hashing, and a TT~\cite{dais2023}. Gorisanson publishes a heuristic MCTS engine that limits expansion to probable wall placements and reports paired match results~\cite{gorisanson2024}. Borowski publishes a generic C++ MCTS implementation demonstrated on Quoridor~\cite{borowski2021}. Slatton's recent MIT-licensed Rust solver precomputes wall configurations and uses proof-oriented search and retrograde analysis to solve reduced boards, but explicitly reports that the method does not scale to full 9$\times$9 play~\cite{slatton2026article,slatton2026solver}. AlphaZero provides a contrasting policy/value-guided search paradigm for difficult evaluation domains~\cite{silver2017}.
+
+\input{generated/related-work-table.tex}
+
+No project in \cref{tab:related-work} publishes a directly comparable full-board benchmark using identical rules, positions, hardware, legal coverage, and node definition. Accordingly, this paper compares \walwuk{} versions against its own exhaustive reference and treats external engines as architectural references until a common protocol is implemented.

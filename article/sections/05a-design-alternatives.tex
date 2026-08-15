@@ -1,0 +1,31 @@
+\section{Design Alternatives and Rationale}
+\subsection{Exhaustive, selective, and hybrid search}
+Pure exhaustive alpha--beta offers the cleanest fixed-depth interpretation: every legal continuation is available until the horizon. Its weakness is effective branching factor. Pure selective search spends compute on plausible paths and reaches farther, but its result may depend on an omitted wall. Pure MCTS offers anytime sampling and long rollouts but lacks a common exhaustive horizon. The chosen hybrid is intentionally asymmetric: deep search proposes; exhaustive search challenges.
+
+This does not make the proposal correct. If the decisive refutation lies deeper than \verifiedDepth, both lanes may miss it. The design instead creates an observable confidence boundary. A future confidence model can incorporate root score separation, verifier agreement, PV stability, and regret history without relabeling provisional work as proof.
+
+\subsection{Wall generation policies}
+At least five policies have been considered. Full generation retains every structurally and path-legal wall. Witness-path generation retains walls intersecting one current shortest route. All-shortest-route generation uses forward and reverse distances to identify every edge belonging to a shortest path. Tactical generation adds walls near either pawn or existing structures. Learned ordering scores every legal candidate but initially removes none.
+
+One witness is cheap but arbitrary when several equal routes exist. The all-shortest-route experiment reduced a known 151-unit root miss to the accepted 100-unit margin across its audit, but still imposed a 23\% median-NPS cost and changed timed choices. It remains held because improving a shallow audit does not establish game strength. A future staged picker may compute the route union only after cheaper stages fail to cut off.
+
+\subsection{Pathfinding and topology caches}
+Pawn moves do not alter the wall topology. In principle, one reverse flood fill per goal can supply distances from all squares, making subsequent pawn nodes cheap. In practice, early eager topology caches admitted many wall layouts that were visited once and displaced useful data. The first versions lost 20--90\% throughput; a delayed two-tier version recovered short-screen speed but lost 25\% average NPS at one second.
+
+The next design must be demand-admitted. Tier one stores compact distance fields only after a second encounter. Tier two adds route unions and strategic features after repeated reuse. A wall move attempts bounded incremental repair and falls back to full flood fill when the affected area is large. Every repaired field is sampled against full recomputation in audit builds. This preserves the underlying insight---topology is reusable---without assuming every encountered topology deserves a cache entry.
+
+\subsection{Legality timing}
+Immediate wall validation is simple but pays pathfinding for actions alpha--beta may never search. Route certificates already eliminate some calls safely. Slatton proposes a more aggressive alternative: recurse through most apparently legal walls and discover an illegal branch at a leaf, relying on the monotonic fact that adding walls cannot restore a missing route~\cite{slatton2026article}. This could remove substantial internal move-generation work.
+
+The danger lies in score propagation. An illegal child is not a losing legal move; it is absent from the action set. Null values must propagate until the engine can distinguish an illegal ancestor from a legal node whose child happened to be illegal. TT entries must never cache a bound derived from a malformed action set. The technique will therefore enter only as an exhaustively audited experiment with adversarial near-sealing positions.
+
+\subsection{Evaluation versus proof}
+Shortest-path difference is fast and often directionally useful, but it ignores how easily paths can be cut. Wall reserve is useful but phase dependent. Mobility matters near contact but is weak in open positions. The evaluator therefore remains an estimate, even when expressed in integer units.
+
+Exact solvers occupy a separate layer. With no reserves, the wall topology is fixed and the remaining state graph contains only pawn squares and side to move. Retrograde analysis can then prove outcomes and distances. Low-wall solvers expand this region but grow rapidly because each remaining wall branches into many topologies. A proof result may replace heuristic evaluation only when its complete graph or certificate is replayable.
+
+\subsection{Learned components}
+A compact learned policy is lower risk than a learned value. Ordering every legal move can improve alpha--beta cutoffs without altering coverage. A learned value changes leaf scores and therefore every pruning decision. The planned sequence is consequently policy first, then a deterministic integer value model blended with exact tactical features. Both require stable labels, symmetry-aware held-out data, artifact versioning, and equal-resource matches. Missing or incompatible weights must fall back to the handcrafted engine.
+
+\subsection{Parallel search models}
+Static root splitting is deterministic and easy to verify, but load imbalance grows when a few wall moves are expensive. Dynamic root scheduling reduces stragglers. Lazy SMP with a shared TT may discover useful bounds through diversified searches but requires shared Wasm memory and more difficult race auditing. GitHub Pages cannot conveniently provide the cross-origin isolation required for shared memory, so the common production architecture must retain isolated-worker correctness. The extension may specialize only when it automatically falls back to that baseline.

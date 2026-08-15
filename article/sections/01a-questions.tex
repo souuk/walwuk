@@ -1,0 +1,16 @@
+\section{Research Questions and Claims}
+The project is organized around questions rather than a single headline NPS target.
+
+\textbf{RQ1: How much exact work can be removed without changing a fixed-depth result?} This includes representation, move generation, pathfinding, symmetry, ordering, and TT reuse. An optimization belongs to this class only when every legal root score and deterministic tie break remain identical to the reference at the tested horizon.
+
+\textbf{RQ2: How much deeper can selective search go without increasing decision regret?} Selective wall generation and pruning can dramatically reduce the effective branching factor, but the omitted continuation may be the only long-term defense. This question is evaluated through exhaustive root regret, fixed-node tests, and paired games rather than displayed depth alone.
+
+\textbf{RQ3: Can an exhaustive verifier make aggressive search practically safer?} The verifier cannot prove lines deeper than its own horizon. It can nevertheless catch shallow tactical contradictions, compare every legal root action at a common depth, and prevent a deep selective result from being presented as uniform coverage.
+
+\textbf{RQ4: How much analysis can be reused across time and moves?} Iterative deepening already reuses ordering within one request. Continuous browser analysis creates a second opportunity: keep workers, TT entries, histories, and a previous principal variation alive; then rebase after the observed move.
+
+\textbf{RQ5: Which metric best predicts playing improvement?} Candidate metrics include NPS, time to depth, effective branching factor, verified depth, selective depth, root regret, PV stability, and paired-game score. The working hypothesis is that no single metric suffices: exactness gates rule out corrupt changes, time-to-depth measures engineering, and equal-resource games measure practical strength.
+
+\textbf{RQ6: What is the performance cost of browser portability?} Native C++ offers a useful reference, but the delivered engine must run as WebAssembly within worker, memory, and hosting restrictions. The paper therefore records artifact identity and compares native and Wasm behavior before attributing a regression to search design.
+
+The present evidence supports only bounded claims. The implementation has passed large sampled parity suites; retained optimizations improve measured depth and reuse on the recorded host; and the hybrid architecture exposes uncertainty more honestly than a single selective number. It is not yet supported that \walwuk{} is the strongest public Quoridor engine, that its preferred move is globally optimal, or that selective search has surpassed the exhaustive reference in statistically controlled play.

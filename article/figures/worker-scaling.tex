@@ -1,0 +1,9 @@
+\begin{tikzpicture}
+\begin{axis}[
+  width=\columnwidth,height=4cm,xlabel={workers},ylabel={aggregate NPS},
+  xtick={1,4,12},scaled y ticks=base 10:-6,y tick scale label code/.code={$\times10^6$},
+  ymin=0,grid=major
+]
+\addplot+[mark=*,thick] table[x=workers,y=nps,col sep=comma]{generated/worker-scaling.csv};
+\end{axis}
+\end{tikzpicture}

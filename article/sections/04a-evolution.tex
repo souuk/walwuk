@@ -1,0 +1,36 @@
+\section{Evolution of the Walwuk Engine}
+The current architecture was not designed in one pass. It emerged from a sequence of failures in which a locally attractive metric exposed a different weakness.
+
+\subsection{Interactive TypeScript prototype}
+The first engine prioritized rule correctness and explainability. TypeScript owned the position, legal pawn movement, wall placement, shortest-path evaluation, and a depth-limited alpha--beta search. That implementation established the application-facing state and move formats, made browser debugging easy, and served as the later native differential oracle. Its main limitation was throughput: allocation-heavy state copying and repeated pathfinding made deeper exhaustive search impractical.
+
+The early interface also treated a completed recommendation as a button-driven event. Continuous analysis later revealed lifecycle requirements that a one-shot calculator did not have: cancellation, stale-result suppression, board-change detection, worker persistence, and the ability to play the latest fully completed move before a longer iteration finishes.
+
+\subsection{C++ and WebAssembly migration}
+The search was ported to C++ while UI legality and rendering remained in TypeScript. Compact squares, packed moves, fixed arrays, 64-bit wall masks, precomputed edge masks, and a clustered TT moved the hot path away from JavaScript. The WebAssembly boundary was deliberately coarse: start a search, report periodic progress, and return a result. No JavaScript callback occurs per node.
+
+The TypeScript backend initially remained a fallback and parity reference. This staged migration mattered because a faster engine with subtly different jump or wall rules would have invalidated every later benchmark. Curated positions covered jumps, diagonals, overlaps, crossings, route blocking, low reserves, near wins, and transpositions before native performance became the priority.
+
+\subsection{From exhaustive to plausible search}
+Full internal wall generation produced a verified but shallow search. A plausible engine retained all pawn actions and prioritized walls touching a shortest-path witness or lying near either pawn. It added late-move reductions, shallow wall-count pruning, futility conditions, internal iterative reduction, PVS, aspiration windows, and stronger ordering. Initial samples showed two to three more plies at one second, but early matches also demonstrated that greater nominal depth did not guarantee stronger choices.
+
+This led to the hybrid architecture. Every legal root action remained available, the main lane searched plausible continuations more deeply, and an independent exhaustive lane established a shallower common comparison. The interface stopped using one undifferentiated ``depth'' value and exposed main, verified, and seldepth separately.
+
+\subsection{Wall-economy failures}
+A conspicuous strategic failure motivated evaluation research: shallow search sometimes spent walls repeatedly to create immediate distance gains, then entered a later phase with only a few walls against a well-stocked opponent. Human advice such as ``do not burn walls early'' described the symptom but was unsafe as a forced rule. Some early walls are tactically decisive.
+
+The preferred formulation became a measurable strategic evaluator: nonlinear value for the last walls, immediate and future wall delay, own-route harm, future anchors, postponability, and the ability to answer the opponent's best wall. The first wall-economy experiment was held rather than promoted because it cost depth and lacked sufficient game evidence. This is representative of the project's policy: theory may suggest features and ordering, but it does not override search.
+
+\subsection{Micro-optimization and misleading NPS}
+A concentrated exact pass replaced wall scans with bit operations, precomputed blocked edges and near-pawn masks, reduced temporary move construction, and delayed child path preparation. One-second average NPS improved by 10.2\% for exhaustive and 23.9\% for selective search in the recorded screen. Several apparently reasonable changes failed: larger path and TT caches hurt locality, table-driven pawn neighbors did not beat the hot code, and a structure-of-arrays rewrite added overhead.
+
+These failures reinforced two distinctions. First, a larger cache may produce more hits but lose time through memory traffic. Second, higher NPS may count a cheaper distribution of nodes without completing another useful ply. Consequently, every micro-optimization is judged by fixed-depth parity and time to depth as well as NPS.
+
+\subsection{Parallel extension analysis}
+The extension eventually distributed root work over as many as 75\% of reported logical processors. Aggregate NPS rose dramatically, but deterministic modulo partitions created stragglers and duplicated per-worker TT storage. A dynamic exact root queue improved depth-five wall time by 4.63$\times$ on eight workers, yet its 57.9\% efficiency missed the 60\% promotion target. Shared-memory WebAssembly compiled and passed smoke parity, but it did not yet share the TT and therefore offered insufficient benefit to ship.
+
+\subsection{Persistent analysis}
+Recreating a worker every turn discarded the TT, histories, Wasm initialization, and the likely continuation of the previous PV. Persistent contexts introduced bounded epochs and start, continue, rebase, cancel, and clear semantics. Reusing the expected continuation gained one completed ply in the recorded one-second opening and exposed reused nodes separately from ordinary TT hits. It also created resource risks: a long-lived pool must be cancelled correctly, bounded by memory, and prevented from treating minor screen-recognition noise as a new game state.
+
+\subsection{Phase Two research discipline}
+Phase Two added experiment masks, an immutable promotion manifest, fixed-node matches, campaign checkpointing, model scaffolding, low-wall solvers, native/Wasm parity tooling, and explicit held/rejected states. Importantly, most experiments did not ship. Topology caching, canonical TT symmetry, partial selection, SIMD, and several pruning designs were slower or less stable. The production mask remained zero while evidence accumulated. This history is central to the paper: the research contribution is as much the mechanism for refusing weak optimizations as the successful code paths.

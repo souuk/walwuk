@@ -2,11 +2,14 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 
+import {acquireBuildLock} from "./build-lock.mjs";
+
 const outputIndex = process.argv.indexOf("--output");
 const output = resolve(
   outputIndex >= 0 ? process.argv[outputIndex + 1] : "public/engine/walwuk-engine.mjs",
 );
 mkdirSync(dirname(output), { recursive: true });
+const releaseBuildLock = acquireBuildLock(output);
 
 const localCompiler = resolve(
   ".emsdk",
@@ -40,11 +43,16 @@ if (useLocalWindowsSdk) {
   environment.EM_CONFIG = resolve(".emsdk", ".emscripten");
   environment.EMSDK_NODE = resolve(".emsdk", "node", "24.19.0_64bit", "node.exe");
 }
-const result = spawnSync(compiler, compilerArguments, {
+let result;
+try {
+  result = spawnSync(compiler, compilerArguments, {
   cwd: process.cwd(),
   env: environment,
-  stdio: "inherit",
-});
+    stdio: "inherit",
+  });
+} finally {
+  releaseBuildLock();
+}
 
 if (result.error) {
   console.error("Emscripten 6.0.6 is required. Activate emsdk before building walwuk.");

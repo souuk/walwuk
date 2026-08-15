@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "phase3-tranche1-preliminary-2026-08-15",
+  "status": "preliminary",
+  "capturedAt": "2026-08-15T20:00:00-07:00",
+  "provenance": {
+    "baseCommit": "9b9edf5639b6513a0d09237d21c36e2c28b4398d",
+    "engineVersion": "phase3.0-dev",
+    "evaluatorVersion": "handcrafted-v2",
+    "policyVersion": "history-v1",
+    "productionExperimentMask": 0,
+    "emscriptenVersion": "6.0.6",
+    "wasmSha256": "8079eddc66c7ef98a46a201f1c04abb0f635657a142163a4c3c217c99998f788",
+    "wrapperSha256": "4e802072c0c953648acc0918e401ab5461a43093a602ac3515bce5340adc4639",
+    "sourceDocuments": [
+      "docs/benchmarks/2026-08-15-maximum-strength-phase3-tranche1.md",
+      "engine-native/promotion-manifest.json",
+      "outputs/phase3-probcut-100x50k.json",
+      "outputs/phase3-multicut-100x50k.json",
+      "outputs/phase3-reverse-futility-100x50k.json",
+      "outputs/phase3-adaptive-lmr-100x50k.json",
+      "outputs/phase3-adaptive-lmr-500x50k-aggregate.json"
+    ]
+  },
+  "phaseThree": {
+    "validation": {
+      "curatedFixtures": 10,
+      "curatedDepth": 3,
+      "randomPositions": 2000,
+      "mismatches": 0,
+      "walperTests": 13,
+      "resourceChecksPassed": true,
+      "typeScriptPassed": true,
+      "lintPassed": true
+    },
+    "hotPath": {
+      "status": "preliminary",
+      "changes": [
+        "avoid clearing unused fixed-capacity move buffers",
+        "use distance-only path queries during pawn move ordering"
+      ],
+      "oneSecondFourPositionAverageNpsBefore": 1294112,
+      "oneSecondFourPositionAverageNpsAfter": 1341111,
+      "averageDepthBefore": 9.5,
+      "averageDepthAfter": 9.5
+    },
+    "resume": {
+      "status": "validated-behavior-preliminary-performance",
+      "sameRootRestoredDepth": true,
+      "strictFixedDepthBypassesResume": true,
+      "fixedNodeBypassesResume": true,
+      "clearInvalidatesResume": true,
+      "oneSecondColdDepth": 9,
+      "oneSecondResumedFromDepth": 9,
+      "oneSecondContinuedDepth": 9,
+      "note": "A separate isolated run reached depth ten after resuming, but the gain did not repeat under concurrent validation and is not treated as a performance claim."
+    },
+    "topologyV3": {
+      "status": "rejected",
+      "oneSecondMedianNpsChangePercent": -11,
+      "aggregateDepthGain": 0,
+      "timedPreferredMovesChanged": 2,
+      "timedPositions": 4
+    },
+    "dynamicRoot": {
+      "status": "held",
+      "openingDepth": 5,
+      "singleWorkerMs": 387,
+      "fourWorkerMs": 173,
+      "eightWorkerMs": 172,
+      "channelledRoutesThreeWorkerEfficiencyPercent": 74.7,
+      "transpositionRichThreeWorkerEfficiencyPercent": 50.7,
+      "blockingIssue": "Coordinator cannot reproduce native equal-score root ordering without exported ordering metadata."
+    },
+    "pruning": {
+      "probCut": {
+        "name": "ProbCut",
+        "status": "rejected",
+        "games": 100,
+        "nodeLimitPerMove": 50000,
+        "candidateWins": 49,
+        "baselineWins": 51,
+        "unresolved": 0,
+        "candidateWinsPeriwinkle": 28,
+        "candidateWinsBlossom": 21,
+        "baselineWinsPeriwinkle": 29,
+        "baselineWinsBlossom": 22,
+        "averagePlies": 56.49,
+        "candidateAverageDepth": 7.6572,
+        "baselineAverageDepth": 7.863
+      },
+      "multiCut": {
+        "name": "multi-cut",
+        "status": "rejected",
+        "games": 100,
+        "nodeLimitPerMove": 50000,
+        "candidateWins": 50,
+        "baselineWins": 50,
+        "unresolved": 0,
+        "candidateWinsPeriwinkle": 24,
+        "candidateWinsBlossom": 26,
+        "baselineWinsPeriwinkle": 24,
+        "baselineWinsBlossom": 26,
+        "averagePlies": 53.12,
+        "candidateAverageDepth": 7.9627,
+        "baselineAverageDepth": 8.5862
+      },
+      "reverseFutility": {
+        "name": "reverse futility",
+        "status": "held",
+        "games": 100,
+        "nodeLimitPerMove": 50000,
+        "candidateWins": 50,
+        "baselineWins": 50,
+        "unresolved": 0,
+        "candidateWinsPeriwinkle": 25,
+        "candidateWinsBlossom": 25,
+        "baselineWinsPeriwinkle": 25,
+        "baselineWinsBlossom": 25,
+        "averagePlies": 55.2,
+        "candidateAverageDepth": 8.7424,
+        "baselineAverageDepth": 8.35
+      },
+      "adaptiveLmr": {
+        "name": "adaptive LMR",
+        "status": "held",
+        "games": 500,
+        "nodeLimitPerMove": 50000,
+        "candidateWins": 267,
+        "baselineWins": 233,
+        "unresolved": 0,
+        "candidateWinsPeriwinkle": 134,
+        "candidateWinsBlossom": 133,
+        "baselineWinsPeriwinkle": 117,
+        "baselineWinsBlossom": 116,
+        "averagePlies": 55.77,
+        "candidateAverageDepth": 8.6554,
+        "baselineAverageDepth": 8.2279
+      }
+    },
+    "harnessCorrections": [
+      "The match harness now accepts both --nodes and --node-limit.",
+      "Two accidental 25 ms reruns were discarded and overwritten by deterministic 50000-node reports."
+    ]
+  }
+}

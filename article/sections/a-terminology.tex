@@ -1,0 +1,10 @@
+\section{Terminology and Score Units}
+\begin{description}
+\item[Main depth.] Deepest completed selective iteration across the main root search.
+\item[Verified depth.] Deepest common depth at which every legal root action has exhaustive verifier coverage.
+\item[Selective depth.] Synonym for the completed main-search depth in current diagnostics.
+\item[Seldepth.] Deepest individual line reached through reductions, re-searches, quiescence, or extensions; not uniform coverage.
+\item[Node.] One invocation of the relevant native search routine. Counts are comparable only for the same engine mode and instrumentation.
+\item[TT hit.] A position key found in the transposition table. Only usable bounds avoid search; hit count alone does not equal saved nodes.
+\item[Evaluation unit.] Handcrafted integer score. One path-equivalent move is provisionally 100 units; this scale is not a calibrated win probability.
+\end{description}

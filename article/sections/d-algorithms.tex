@@ -1,0 +1,46 @@
+\section{Algorithm Sketches}
+The pseudocode in this appendix documents intent rather than a line-for-line transcription of the optimized C++.
+
+\subsection{Hybrid iterative deepening}
+\begin{enumerate}
+\item Generate and deterministically order every legal root action.
+\item Search the prior-PV or TT root action first in the selective lane.
+\item Distribute remaining main-lane root actions within the main work budget.
+\item Search every legal root action exhaustively at the next verifier depth.
+\item Publish a provisional result whenever a complete main iteration finishes.
+\item Publish \verifiedDepth{} only when all verifier root actions at that depth finish.
+\item If the verifier contradicts the provisional choice under the configured safety rule, use the verifier choice.
+\item Preserve completed iterations, TT entries, histories, and the PV for the next epoch.
+\end{enumerate}
+
+\subsection{Fail-soft selective negamax}
+Given $(s,d,\alpha,\beta)$:
+\begin{enumerate}
+\item Stop on a terminal goal and return a distance-adjusted win or loss.
+\item Probe the exact-identity TT entry. If its depth and bound permit, return or tighten the window.
+\item If $d\leq0$, return the static or bounded tactical evaluation.
+\item Construct a staged move picker beginning with TT, PV, immediate-goal, pawn, tactical-wall, and remaining plausible-wall stages.
+\item For each selected action, perform structural checks, then make the move and compute path legality only when required.
+\item Search the first action with the full window. Search later actions with a null window; re-search a potential improvement.
+\item Apply a permitted late-move reduction only outside protected nodes. Re-search any reduced action that raises alpha.
+\item Update histories on cutoffs, store a verified TT bound for the exact packed position, undo, and return the fail-soft score.
+\end{enumerate}
+
+\subsection{Route-certificate wall validation}
+For a structurally non-conflicting wall:
+\begin{enumerate}
+\item Determine which blocked edges the wall adds.
+\item If each player's retained route certificate avoids those edges, the wall preserves both certified routes and is legal.
+\item Otherwise, apply the blocked-edge masks and flood-fill from the affected pawn or goal row.
+\item Reject the wall if either pawn cannot reach its goal; otherwise cache the new witness when admission policy permits.
+\end{enumerate}
+
+\subsection{Persistent rebase}
+When a board change is detected:
+\begin{enumerate}
+\item Cancel the active epoch and invalidate its visible suggestion.
+\item Match the observed state against a legal child of the prior root.
+\item If engine, evaluator, policy, and representation versions agree, retain compatible TT and histories and reroot the previous PV.
+\item Start the new position with the rerooted PV and previous child TT move first.
+\item Otherwise clear incompatible caches and start a cold analysis.
+\end{enumerate}

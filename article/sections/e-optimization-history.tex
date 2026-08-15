@@ -1,0 +1,37 @@
+\section{Optimization and Experiment History}
+This appendix groups ideas by their scientific outcome. A retained change is not necessarily novel; it is a change supported by the project's current parity and performance evidence.
+
+\subsection{Retained exact engineering}
+\begin{itemize}
+\item C++ search core compiled to modular WebAssembly.
+\item Compact 0--80 squares and packed pawn/wall actions.
+\item Two 64-bit wall masks with precomputed overlap, crossing, and blocked-edge masks.
+\item Incremental Zobrist hashing with full packed-position verification in TT entries.
+\item In-place make/unmake and fixed search buffers.
+\item Bit-parallel path expansion and cached route witnesses.
+\item Structural wall enumeration through masks rather than scanning 128 identities.
+\item Lazy child preparation and path computation after move ordering.
+\item Iterative deepening, fail-soft alpha--beta, PVS, aspiration windows, and mate-distance bounds.
+\item Deeper timed TT bound reuse with strict-horizon parity mode.
+\item Exact root reflection reduction in truly symmetric positions.
+\item Persistent workers, histories, PV, and TT state across compatible epochs.
+\item Root zero-wall retrograde solving with replayable lines.
+\end{itemize}
+
+\subsection{Retained selective mechanisms}
+\begin{itemize}
+\item Every legal pawn action and every legal root action remain available.
+\item Internal wall candidates include path-intersecting and near-pawn tactical walls.
+\item Later, low-priority walls receive depth-sensitive reductions or shallow omission under guarded conditions.
+\item A reduced action that can improve alpha is searched again at the required depth.
+\item The exhaustive verifier is kept separate from selective coverage.
+\end{itemize}
+
+\subsection{Held ideas}
+Held work includes strategic wall-economy evaluation, bounded Wallz quiescence, adaptive reductions, reverse futility, ProbCut, multi-cut, all-shortest-route candidates, dynamic root scheduling, and shared-memory workers. These ideas either gained depth, reduced a known regret, or passed parity, but changed decisions or missed a performance/strength threshold. They remain available for controlled experiments rather than production defaults.
+
+\subsection{Rejected ideas}
+The current architecture rejected eager topology caching, an untuned continuation/tactical history, internal zero-wall solving at every frontier, partial selection, correction history, razoring, history pruning, first-generation singular and forced-defense extensions, per-node canonical TT reflection, and the tested Wasm SIMD build. Earlier exact work also rejected table-driven pawn neighbors, structure-of-arrays reconstruction, a four-times-larger path cache, and a doubled TT. Rejection applies to the measured design, not necessarily the general idea; a materially different implementation requires a new experiment identity.
+
+\subsection{Ideas not yet implemented}
+Open proposals include monotonic deferred legality on full-board search, demand-admitted incremental topology repair, shared TT Lazy SMP, proof-number search near goals, one- and two-wall databases, a learned integer ordering policy, an NNUE-style value, PGO, tiled 3$\times$3 pathfinding, illegality-frontier indexing, compact opening transpositions, and standardized external-engine adapters.

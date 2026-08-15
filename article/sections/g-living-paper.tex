@@ -1,0 +1,8 @@
+\section{Living-Paper Maintenance Protocol}
+The manuscript is intended to grow with the engine and eventually reach approximately 30--40 pages including appendices. Length is a consequence of accumulated evidence, not a reason to duplicate prose.
+
+Each major optimization phase adds four artifacts: an immutable snapshot, regenerated tables and plots, a short narrative explaining the hypothesis and outcome, and an updated limitations paragraph. A rejected experiment still receives a registry entry and enough implementation detail to reproduce the rejection. A promoted experiment updates the production manifest, architecture description, result tables, abstract, and conclusion.
+
+The paper version follows a working sequence. Minor versions add experiments or prose without changing the central claim. A major preprint version freezes engine artifacts and completes the release gates. Author metadata remains editable in \texttt{metadata.tex}; changing draft mode off converts unresolved future-result markers into build errors.
+
+The expected final page allocation is approximately four pages for motivation, background, and comparisons; three for rules and formalization; six for architecture and search; four for engine evolution and design alternatives; five for experimental methods and governance; six to eight for final results; four for discussion and future research; and the remaining pages for appendices, reproducibility, algorithms, experiment history, and proof material. This allocation will be revised after the first locally rendered PDF exposes actual IEEE column flow.

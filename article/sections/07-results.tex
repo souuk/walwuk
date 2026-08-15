@@ -1,0 +1,48 @@
+\section{Preliminary Results}
+All results in this section are preliminary unless explicitly described as a completed correctness gate.
+
+\subsection{Correctness and time to depth}
+The Phase One release-scale rule, movement, wall-legality, path, and evaluation test completed \ParityPositions deterministic random comparisons with zero mismatches. Ten curated fixtures also matched through exhaustive depth three. These tests establish parity over the sampled state space, not a proof covering every reachable state.
+
+At five seconds from the opening, the selective lane advanced from \PhaseOneOldFiveSecondSelectiveDepth{} to \PhaseOneNewFiveSecondSelectiveDepth{} completed plies, while the exhaustive lane advanced from \PhaseOneOldFiveSecondVerifiedDepth{} to \PhaseOneNewFiveSecondVerifiedDepth{}. At fifteen seconds, selective depth advanced from \PhaseOneOldFifteenSecondSelectiveDepth{} to \PhaseOneNewFifteenSecondSelectiveDepth{}. \Cref{fig:time-depth} plots these opening measurements.
+
+\begin{figure}[t]
+\centering
+\input{figures/time-to-depth.tex}
+\caption{Opening completed depth before and after the Phase One exact hot-path changes. Selective and exhaustive depths measure different coverage.}
+\label{fig:time-depth}
+\end{figure}
+
+\subsection{Parallelism and reuse}
+On the recorded i5-12600KF host, a two-second root-split screen measured the aggregate results in \cref{fig:workers}. These figures do not imply superlinear hardware efficiency because split searches visit different nodes. The dynamic exact root queue reduced a depth-five opening search from \DynamicRootSingleMs{} to \DynamicRootEightMs{} ms with eight workers, a \DynamicRootSpeedup$\times$ speedup and \DynamicRootEfficiency\% efficiency. It remains below the 60\% promotion target.
+
+\begin{figure}[t]
+\centering
+\input{figures/worker-scaling.tex}
+\caption{Aggregate root-worker NPS. Wall-clock completed depth, rather than cross-layout NPS, remains authoritative.}
+\label{fig:workers}
+\end{figure}
+
+Persistent analysis improved the expected-move opening from \ColdExpectedMoveDepth{} to \WarmExpectedMoveDepth{} completed plies at one second and reused \ExpectedMoveReusedNodes{} nodes. Repeating the same opening reported \SamePositionReusedNodes{} reused nodes. These are cache-reuse measurements, not additional newly searched nodes.
+
+\subsection{Self-play pilot}
+The resource-capped pilot completed \PilotGames games and \PilotPlies plies, averaging \PilotAveragePlies{} plies per game. The hybrid won \PilotHybridWins, the exhaustive reference won \PilotExhaustiveWins, and \PilotUnresolved games reached the limit. \Cref{fig:pilot-outcomes} separates wins by engine and color.
+
+\begin{figure}[t]
+\centering
+\input{figures/pilot-outcomes.tex}
+\caption{Preliminary pilot wins by engine and color over both time controls. Unresolved games are omitted from the bars.}
+\label{fig:pilot-outcomes}
+\end{figure}
+
+Neither 250 ms nor one-second SPRT crossed a configured boundary. Moreover, this older pilot allowed the color-swapped return game to inherit per-engine caches across a game boundary. The data remain useful as a baseline but cannot promote or reject the hybrid. The updated protocol clears each engine between games while preserving reuse between moves within a game.
+
+\subsection{Negative and held experiments}
+The experiment registry in \cref{tab:experiments} records failures rather than selecting only favorable measurements. Eager topology caching, partial selection, several untuned histories, canonical per-node symmetry, and the SIMD build reduced NPS or completed depth. ProbCut, multi-cut, reverse futility, adaptive reductions, strategic evaluation, quiescence, and all-shortest-route candidates remain held because short screens changed preferred moves or lacked strength evidence.
+
+\subsection{Phase Three engineering tranche}
+The first Phase Three tranche retained two exact hot-path changes and added same-root iteration continuation. The latter reports the restored completed depth explicitly and is bypassed by strict fixed-depth and fixed-node searches. It passed clear-state and strict-search checks, but its short fixed-time depth gain varied across repeated runs and is therefore not yet reported as a strength or performance improvement.
+
+\Cref{tab:phase-three-pruning} records the first fixed-node selective screens. ProbCut scored \PhaseThreeProbCutWins--\PhaseThreeProbCutBaselineWins and multi-cut scored \PhaseThreeMultiCutWins--\PhaseThreeMultiCutBaselineWins. Both reached lower average depth than their baselines despite modestly higher reported NPS. They were rejected because faster node counting did not translate into deeper or stronger search. Adaptive LMR subsequently led \PhaseThreeAdaptiveLmrWins--\PhaseThreeAdaptiveLmrBaselineWins{} over \PhaseThreeAdaptiveLmrGames{} games and increased average depth from \PhaseThreeAdaptiveLmrBaselineDepth{} to \PhaseThreeAdaptiveLmrDepth{}. This is promising preliminary evidence, but it remains below the planned game volume and has not passed fixed-time testing.
+
+\input{generated/phase-three-pruning-table.tex}

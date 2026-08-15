@@ -51,3 +51,13 @@ yarn-error.log*
 !/public/engine/.gitkeep
 /walper/dist/
 /walper/walper-extension.zip
+
+/article/build/
+/article/*.zip
+/article/*.pdf
+/article/*.aux
+/article/*.bbl
+/article/*.blg
+/article/*.log
+/article/*.out
+/article/*.toc

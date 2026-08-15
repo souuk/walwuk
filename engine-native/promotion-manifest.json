@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "engineVersion": "phase2.1",
+  "engineVersion": "phase3.0-dev",
   "production": {
     "experimentMask": 0,
     "evaluator": "handcrafted-v2",
@@ -58,7 +58,7 @@
     "64": {
       "name": "adaptive late-move reductions",
       "status": "held",
-      "reason": "250 ms screen lost one aggregate depth and changed two of four moves; requires selective audit"
+      "reason": "a 500-game paired 50000-node screen led 267-233 and increased average depth from 8.23 to 8.66; promising early evidence, but below the planned statistical promotion volume and fixed-time gates"
     },
     "128": {
       "name": "topology-position correction history",
@@ -73,7 +73,7 @@
     "512": {
       "name": "reverse futility pruning",
       "status": "held",
-      "reason": "gained one aggregate ply at both 250 ms and one second, but changed two of four moves; requires regret and paired-match evidence"
+      "reason": "a 100-game paired 50000-node screen drew 50-50 and increased average depth from 8.35 to 8.74; promising efficiency evidence, but no strength gain yet"
     },
     "1024": {
       "name": "razoring",
@@ -82,8 +82,8 @@
     },
     "2048": {
       "name": "ProbCut",
-      "status": "held",
-      "reason": "gained three aggregate plies at 250 ms and one at one second, but changed two of four moves; requires regret and paired-match evidence"
+      "status": "rejected",
+      "reason": "a 100-game paired 50000-node screen lost 49-51 and reached lower average depth than baseline (7.66 versus 7.86); its 4% higher NPS did not represent more useful search"
     },
     "4096": {
       "name": "history pruning",
@@ -92,8 +92,8 @@
     },
     "8192": {
       "name": "multi-cut",
-      "status": "held",
-      "reason": "gained two aggregate plies at one second but changed two of four moves; requires regret and paired-match evidence"
+      "status": "rejected",
+      "reason": "a 100-game paired 50000-node screen drew 50-50 but reached lower average depth than baseline (7.96 versus 8.59); its 4% higher NPS did not improve useful search"
     },
     "16384": {
       "name": "singular extension",
@@ -114,6 +114,11 @@
       "name": "all-shortest-route selective walls",
       "status": "held",
       "reason": "demand-driven route unions fixed the depth regression and reduced the 250 ms median-NPS cost from 43% to 23%; a 42-position depth-3 audit reduced maximum root regret from 151 to 100 and fixed the 151-unit miss, but two of four timed moves still changed, so fixed-node and paired strength evidence are required"
+    },
+    "262144": {
+      "name": "auxiliary topology distance cache v3",
+      "status": "rejected",
+      "reason": "revision one reduced 250 ms median NPS by 27%; delayed admission and cheaper reconstruction still reduced one-second median NPS by 11%, changed two of four preferred moves, and produced no aggregate depth gain; a topology-centered position design requires a new experiment identity"
     }
   },
   "promotionRequirements": {
@@ -125,7 +130,7 @@
   },
   "parallelResearch": {
     "dynamicRootQueue": {
-      "status": "prototype",
+      "status": "held",
       "openingDepth3": {
         "singleWorkerMs": 102,
         "eightWorkerMs": 108
@@ -136,7 +141,7 @@
         "speedup": 4.63,
         "efficiency": 0.579
       },
-      "decision": "Keep deterministic partitions in production until persistent browser scheduling reaches the 60% efficiency gate."
+      "decision": "The predicted-first null-window prototype is much faster on the opening, but deterministic tie selection requires native ordering metadata and efficiency varies by position; keep production scheduling unchanged."
     },
     "sharedMemoryArtifact": {
       "status": "parity-passed-prototype",
