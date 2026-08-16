@@ -2,6 +2,11 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#ifdef __EMSCRIPTEN_PTHREADS__
+#include <mutex>
+#include <thread>
+#endif
+
 #include <cstdlib>
 #include <sstream>
 #include <string>
@@ -378,7 +383,7 @@ std::array<PathCacheEntry, kPathCacheSize> path_cache;
 // Empty openings have cheap, low-collision BFS traversals where hashing costs
 // more than recomputation. Each worker owns one Wasm instance and one search,
 // so root-phase specialization is thread-safe and remains exact.
-bool path_cache_enabled = false;
+thread_local bool path_cache_enabled = false;
 
 struct TopologyCacheEntry {
   uint64_t horizontal_walls = 0;
@@ -520,6 +525,9 @@ std::vector<TranspositionCluster> transposition_table(
 std::array<ZeroWallCacheEntry, kZeroWallCacheSize> zero_wall_cache;
 uint8_t transposition_generation = 0;
 std::string exported_result;
+#ifdef __EMSCRIPTEN_PTHREADS__
+std::mutex transposition_mutex;
+#endif
 
 struct SearchResumeState {
   Position root{};
@@ -570,8 +578,8 @@ struct QuantizedValue {
   bool valid = false;
 };
 QuantizedValue learned_value;
-uint64_t active_topology_cache_hits = 0;
-uint64_t active_topology_repairs = 0;
+thread_local uint64_t active_topology_cache_hits = 0;
+thread_local uint64_t active_topology_repairs = 0;
 
 #ifdef __EMSCRIPTEN__
 EM_JS(void, EmitProgress, (const char* json), {
@@ -2189,13 +2197,16 @@ class Search {
           int root_index = 0, int root_count = 1,
           bool start_new_generation = true,
           SearchMode mode = SearchMode::kExhaustive,
-          uint64_t node_limit = 0)
+          uint64_t node_limit = 0,
+          bool prepare_persistent_context = true,
+          bool emit_progress = true)
       : initial_(initial),
         max_depth_(max_depth),
         time_ms_(time_ms),
         root_index_(root_index),
         root_count_(root_count),
         mode_(mode),
+        emit_progress_(emit_progress),
         node_limit_(node_limit),
         strict_horizon_(time_ms == -1),
         solve_zero_wall_((initial.walls_left[0] == 0 &&
@@ -2213,8 +2224,10 @@ class Search {
     started_ = Clock::now();
     last_report_ = started_;
     if (start_new_generation) BeginSearchGeneration();
-    PreparePersistentHistory(initial_);
-    ++engine_context.searches;
+    if (prepare_persistent_context) {
+      PreparePersistentHistory(initial_);
+      ++engine_context.searches;
+    }
     active_topology_cache_hits = 0;
     active_topology_repairs = 0;
     completed_.selective = mode_ == SearchMode::kSelective;
@@ -2295,7 +2308,7 @@ class Search {
       completed_.best_move =
           completed_.pv_length == 0 ? kNoMove : completed_.pv[0];
       RefreshStatistics(&completed_);
-      EmitProgress(ResultJson(completed_).c_str());
+      if (emit_progress_) EmitProgress(ResultJson(completed_).c_str());
     }
     RefreshStatistics(&completed_);
     completed_.stop_reason =
@@ -2492,8 +2505,9 @@ class Search {
     }
     if ((nodes_ & 2047U) != 0) return;
     const Clock::time_point now = Clock::now();
-    if (std::chrono::duration<double, std::milli>(now - last_report_).count() >=
-        1000.0) {
+    if (emit_progress_ &&
+        std::chrono::duration<double, std::milli>(now - last_report_).count() >=
+            1000.0) {
       last_report_ = now;
       AnalysisResult progress = completed_;
       RefreshStatistics(&progress);
@@ -2509,6 +2523,9 @@ class Search {
   TranspositionEntry* FindEntry(const Position& position,
                                 bool* mirrored = nullptr) {
     WALWUK_PROFILE_INCREMENT(tt_probes);
+#ifdef __EMSCRIPTEN_PTHREADS__
+    const std::lock_guard<std::mutex> lock(transposition_mutex);
+#endif
     const CanonicalPosition canonical = Canonicalize(position);
     if (mirrored != nullptr) *mirrored = canonical.mirrored;
     TranspositionCluster& cluster =
@@ -2524,6 +2541,13 @@ class Search {
     if (best != nullptr && canonical.mirrored) {
       ++canonical_transposition_hits_;
     }
+#ifdef __EMSCRIPTEN_PTHREADS__
+    if (best != nullptr) {
+      thread_local TranspositionEntry local_entry;
+      local_entry = *best;
+      return &local_entry;
+    }
+#endif
     return best;
   }
 
@@ -2532,6 +2556,9 @@ class Search {
     const CanonicalPosition canonical = Canonicalize(position);
     TranspositionCluster& cluster =
         transposition_table[PositionIndex(canonical)];
+#ifdef __EMSCRIPTEN_PTHREADS__
+    const std::lock_guard<std::mutex> lock(transposition_mutex);
+#endif
     const uint8_t search_mode = static_cast<uint8_t>(mode_);
     TranspositionEntry* replacement = nullptr;
     // Find an existing entry before considering an empty slot. Stopping at the
@@ -3291,6 +3318,7 @@ class Search {
   int root_index_;
   int root_count_;
   SearchMode mode_;
+  bool emit_progress_;
   uint64_t node_limit_;
   bool strict_horizon_;
   bool solve_zero_wall_;
@@ -3324,6 +3352,95 @@ class Search {
   AnalysisResult completed_;
 };
 
+AnalysisResult AnalyzeThreaded(const Position& position, int max_depth,
+                               int thread_count) {
+#ifndef __EMSCRIPTEN_PTHREADS__
+  (void)thread_count;
+  Search search(position, max_depth, -1);
+  return search.Run();
+#else
+  const int workers = std::clamp(thread_count, 1, 8);
+  if (workers == 1 ||
+      (position.walls_left[0] == 0 && position.walls_left[1] == 0)) {
+    Search search(position, max_depth, -1);
+    return search.Run();
+  }
+
+  BeginSearchGeneration();
+  const std::chrono::steady_clock::time_point started =
+      std::chrono::steady_clock::now();
+  std::vector<AnalysisResult> results(static_cast<std::size_t>(workers));
+  std::vector<std::thread> threads;
+  threads.reserve(static_cast<std::size_t>(workers));
+  for (int index = 0; index < workers; ++index) {
+    threads.emplace_back([&, index]() {
+      Search search(position, max_depth, -1, index, workers, false,
+                    SearchMode::kExhaustive, 0, false, false);
+      path_cache_enabled = false;
+      results[static_cast<std::size_t>(index)] = search.Run();
+    });
+  }
+  for (std::thread& thread : threads) thread.join();
+
+  AnalysisResult combined = results[0];
+  for (int index = 1; index < workers; ++index) {
+    const AnalysisResult& result = results[static_cast<std::size_t>(index)];
+    if (result.score > combined.score) combined = result;
+  }
+  combined.nodes = 0;
+  combined.transposition_hits = 0;
+  combined.verifier_nodes = 0;
+  combined.leaf_nodes = 0;
+  combined.cutoffs = 0;
+  combined.reduced_searches = 0;
+  combined.pruned_moves = 0;
+  combined.reverse_futility_cuts = 0;
+  combined.razoring_cuts = 0;
+  combined.probcut_cuts = 0;
+  combined.history_prunes = 0;
+  combined.multicut_cuts = 0;
+  combined.singular_extensions = 0;
+  combined.forced_defense_extensions = 0;
+  combined.exact_endgame_hits = 0;
+  combined.topology_cache_hits = 0;
+  combined.researches = 0;
+  combined.reused_nodes = 0;
+  combined.canonical_transposition_hits = 0;
+  combined.sel_depth = 0;
+  for (const AnalysisResult& result : results) {
+    combined.nodes += result.nodes;
+    combined.transposition_hits += result.transposition_hits;
+    combined.verifier_nodes += result.verifier_nodes;
+    combined.leaf_nodes += result.leaf_nodes;
+    combined.cutoffs += result.cutoffs;
+    combined.reduced_searches += result.reduced_searches;
+    combined.pruned_moves += result.pruned_moves;
+    combined.reverse_futility_cuts += result.reverse_futility_cuts;
+    combined.razoring_cuts += result.razoring_cuts;
+    combined.probcut_cuts += result.probcut_cuts;
+    combined.history_prunes += result.history_prunes;
+    combined.multicut_cuts += result.multicut_cuts;
+    combined.singular_extensions += result.singular_extensions;
+    combined.forced_defense_extensions += result.forced_defense_extensions;
+    combined.exact_endgame_hits += result.exact_endgame_hits;
+    combined.topology_cache_hits += result.topology_cache_hits;
+    combined.researches += result.researches;
+    combined.reused_nodes += result.reused_nodes;
+    combined.canonical_transposition_hits +=
+        result.canonical_transposition_hits;
+    combined.sel_depth = std::max(combined.sel_depth, result.sel_depth);
+  }
+  const double elapsed = std::chrono::duration<double, std::milli>(
+                             std::chrono::steady_clock::now() - started)
+                             .count();
+  combined.time_ms = static_cast<int>(elapsed + 0.5);
+  combined.nps = static_cast<int>(combined.nodes * 1000.0 /
+                                  (elapsed < 1.0 ? 1.0 : elapsed));
+  combined.stop_reason = "depth";
+  return combined;
+#endif
+
+}
 std::string SnapshotJson(const Position& position) {
   const PathResult current = ShortestPath(position, position.turn);
   const PathResult opposing = ShortestPath(position, 1 - position.turn);
@@ -3413,6 +3530,17 @@ EMSCRIPTEN_KEEPALIVE int walwuk_load_value(const uint8_t* data, int size) {
 EMSCRIPTEN_KEEPALIVE void walwuk_begin_search() {
   walwuk::BeginSearchGeneration();
 }
+EMSCRIPTEN_KEEPALIVE void walwuk_analyze_threaded(
+    int pawn_zero, int pawn_one, int walls_zero, int walls_one, int turn,
+    uint32_t horizontal_low, uint32_t horizontal_high, uint32_t vertical_low,
+    uint32_t vertical_high, int max_depth, int thread_count) {
+  const walwuk::Position position = walwuk::BuildPosition(
+      pawn_zero, pawn_one, walls_zero, walls_one, turn, horizontal_low,
+      horizontal_high, vertical_low, vertical_high);
+  walwuk::exported_result = walwuk::ResultJson(
+      walwuk::AnalyzeThreaded(position, max_depth, thread_count));
+}
+
 
 EMSCRIPTEN_KEEPALIVE void walwuk_analyze(
     int pawn_zero, int pawn_one, int walls_zero, int walls_one, int turn,

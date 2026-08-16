@@ -23,7 +23,7 @@ const sharedBuild = process.argv.includes("--shared");
 const simdBuild = process.argv.includes("--simd");
 const optionalArguments = [
   ...(profileBuild ? ["-DWALWUK_PROFILE=1"] : []),
-  ...(sharedBuild ? ["-pthread"] : []),
+  ...(sharedBuild ? ["-pthread", "-sPTHREAD_POOL_SIZE=8", "-sPTHREAD_POOL_SIZE_STRICT=0"] : []),
   ...(simdBuild ? ["-msimd128"] : []),
 ];
 const responseArguments = readFileSync(resolve("engine-native", "emscripten.rsp"), "utf8")

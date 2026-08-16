@@ -1,0 +1,233 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "phase8-phase9-2026-08-16",
+  "status": "preliminary",
+  "engineBaseCommit": "d0514ae87b242f37b910cc837b9ec973ffa29ad6",
+  "artifactSha256": "f7bec78af059cdb0951406b2b53538c10adbd5a9a9d4625fe26cd9e828477038",
+  "hardware": {
+    "reportedLogicalProcessors": 16,
+    "totalMemoryBytes": 34055766016
+  },
+  "phase8": {
+    "status": "held-browser-validation",
+    "build": "single shared Wasm memory with a mutex-protected shared TT",
+    "fixtures": 6,
+    "depth": 4,
+    "moveScoreDepthMismatches": 0,
+    "promotionEfficiencyTarget": 0.6,
+    "productionEnabled": false,
+    "summaries": {
+      "2": {
+        "medianSpeedup": 1.6,
+        "parallelEfficiency": 0.8
+      },
+      "4": {
+        "medianSpeedup": 2.03,
+        "parallelEfficiency": 0.5075
+      },
+      "8": {
+        "medianSpeedup": 2.41,
+        "parallelEfficiency": 0.3013
+      }
+    },
+    "reports": [
+      {
+        "fixture": "opening",
+        "threads": 2,
+        "serialMs": 29.26,
+        "threadedMs": 17.61,
+        "speedup": 1.66,
+        "serialNodes": 41072,
+        "threadedNodes": 58639
+      },
+      {
+        "fixture": "opening",
+        "threads": 4,
+        "serialMs": 29.26,
+        "threadedMs": 14.42,
+        "speedup": 2.03,
+        "serialNodes": 41072,
+        "threadedNodes": 107200
+      },
+      {
+        "fixture": "opening",
+        "threads": 8,
+        "serialMs": 29.26,
+        "threadedMs": 12.4,
+        "speedup": 2.36,
+        "serialNodes": 41072,
+        "threadedNodes": 107217
+      },
+      {
+        "fixture": "pawn jump",
+        "threads": 2,
+        "serialMs": 21.77,
+        "threadedMs": 16.73,
+        "speedup": 1.3,
+        "serialNodes": 42548,
+        "threadedNodes": 59592
+      },
+      {
+        "fixture": "pawn jump",
+        "threads": 4,
+        "serialMs": 21.77,
+        "threadedMs": 12.42,
+        "speedup": 1.75,
+        "serialNodes": 42548,
+        "threadedNodes": 111915
+      },
+      {
+        "fixture": "pawn jump",
+        "threads": 8,
+        "serialMs": 21.77,
+        "threadedMs": 13.66,
+        "speedup": 1.59,
+        "serialNodes": 42548,
+        "threadedNodes": 177105
+      },
+      {
+        "fixture": "diagonal jump",
+        "threads": 2,
+        "serialMs": 31.32,
+        "threadedMs": 20.89,
+        "speedup": 1.5,
+        "serialNodes": 61103,
+        "threadedNodes": 94425
+      },
+      {
+        "fixture": "diagonal jump",
+        "threads": 4,
+        "serialMs": 31.32,
+        "threadedMs": 16.07,
+        "speedup": 1.95,
+        "serialNodes": 61103,
+        "threadedNodes": 128294
+      },
+      {
+        "fixture": "diagonal jump",
+        "threads": 8,
+        "serialMs": 31.32,
+        "threadedMs": 12.98,
+        "speedup": 2.41,
+        "serialNodes": 61103,
+        "threadedNodes": 216402
+      },
+      {
+        "fixture": "horizontal overlap pressure",
+        "threads": 2,
+        "serialMs": 33.57,
+        "threadedMs": 21.01,
+        "speedup": 1.6,
+        "serialNodes": 54762,
+        "threadedNodes": 69845
+      },
+      {
+        "fixture": "horizontal overlap pressure",
+        "threads": 4,
+        "serialMs": 33.57,
+        "threadedMs": 13.79,
+        "speedup": 2.43,
+        "serialNodes": 54762,
+        "threadedNodes": 101029
+      },
+      {
+        "fixture": "horizontal overlap pressure",
+        "threads": 8,
+        "serialMs": 33.57,
+        "threadedMs": 11.28,
+        "speedup": 2.98,
+        "serialNodes": 54762,
+        "threadedNodes": 184139
+      },
+      {
+        "fixture": "crossing pressure",
+        "threads": 2,
+        "serialMs": 31.87,
+        "threadedMs": 21.67,
+        "speedup": 1.47,
+        "serialNodes": 53935,
+        "threadedNodes": 73257
+      },
+      {
+        "fixture": "crossing pressure",
+        "threads": 4,
+        "serialMs": 31.87,
+        "threadedMs": 17.78,
+        "speedup": 1.79,
+        "serialNodes": 53935,
+        "threadedNodes": 105895
+      },
+      {
+        "fixture": "crossing pressure",
+        "threads": 8,
+        "serialMs": 31.87,
+        "threadedMs": 13.62,
+        "speedup": 2.34,
+        "serialNodes": 53935,
+        "threadedNodes": 189631
+      },
+      {
+        "fixture": "channelled routes",
+        "threads": 2,
+        "serialMs": 38.79,
+        "threadedMs": 19.57,
+        "speedup": 1.98,
+        "serialNodes": 79716,
+        "threadedNodes": 74465
+      },
+      {
+        "fixture": "channelled routes",
+        "threads": 4,
+        "serialMs": 38.79,
+        "threadedMs": 16.18,
+        "speedup": 2.4,
+        "serialNodes": 79716,
+        "threadedNodes": 117477
+      },
+      {
+        "fixture": "channelled routes",
+        "threads": 8,
+        "serialMs": 38.79,
+        "threadedMs": 12.25,
+        "speedup": 3.17,
+        "serialNodes": 79716,
+        "threadedNodes": 152397
+      }
+    ]
+  },
+  "phase9": {
+    "status": "partial-exact-proof-prototype",
+    "solver": "bounded AND/OR proof search with independent replay",
+    "proofs": [
+      {
+        "pawnRow": 2,
+        "wallsLeft": [
+          0,
+          1
+        ],
+        "outcome": "win",
+        "certificateDepth": 3,
+        "states": 205,
+        "replayValid": true,
+        "certificateSha256": "ed0ac197e2c1b2dad9fa345a90053542e7964236ede21dba2b460767dcf6b375"
+      },
+      {
+        "pawnRow": 3,
+        "wallsLeft": [
+          0,
+          1
+        ],
+        "outcome": "loss",
+        "certificateDepth": 4,
+        "states": 11260,
+        "replayValid": true,
+        "certificateSha256": "4f0454f802bf97243a8c2287dcf18494fdfb9d2d512a380b827fcd613fc15e2a"
+      }
+    ],
+    "limitations": [
+      "certificate depth is a replayed proof length, not proven optimal distance-to-mate",
+      "general one- and two-wall tablebases remain unfinished",
+      "cycles and state-budget exhaustion return unknown"
+    ]
+  }
+}

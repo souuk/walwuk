@@ -30,6 +30,11 @@
       "file": "phase6-phase7-preliminary.json",
       "status": "preliminary",
       "approved": false
+    },
+    {
+      "file": "phase8-phase9-preliminary.json",
+      "status": "preliminary",
+      "approved": false
     }
   ]
 }

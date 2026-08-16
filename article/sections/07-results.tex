@@ -116,3 +116,23 @@ Cheap or unstable iterations now use exact serial fallback. The scheduler
 therefore remains held and is not connected to the browser or extension.
 
 \input{generated/phase-seven-root-table.tex}
+
+\subsection{Shared-memory search and low-wall proofs}
+Phase 8 replaced the earlier collection of isolated Wasm instances with an
+experimental pthread build whose root searches use one shared linear memory
+and one mutex-protected transposition table. Across six depth-four fixtures,
+best move, score, and completed depth matched serial exhaustive search. Two
+threads produced a median \PhaseEightTwoSpeedup$\times$ speedup at
+\PhaseEightTwoEfficiency\% efficiency. Eight threads reached
+\PhaseEightEightSpeedup$\times$ but only \PhaseEightEightEfficiency\%
+efficiency because duplicated search grew faster than useful parallel work.
+The implementation remains held pending extension-context recovery tests and
+does not replace the isolated production pool.
+
+Phase 9 added bounded exact AND/OR proof search whose certificates are replayed
+independently against legal move generation. In one-total-wall near-goal tests,
+it certified a win after a \PhaseNineWinDepth-ply proof while visiting
+\PhaseNineWinStates{} states and a loss after a \PhaseNineLossDepth-ply proof
+while visiting \PhaseNineLossStates{} states. These proof lengths are replayed
+certificate depths, not optimal distances. General one- and two-wall
+tablebases remain unfinished, and cycles or budget exhaustion return unknown.

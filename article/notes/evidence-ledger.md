@@ -52,3 +52,11 @@ The snapshot manifest in `generated/snapshot-manifest.json` records the SHA-256 
   move parity.
 - Status: Phase 6 retained; Phase 7 held below the 60% efficiency gate.
 - Status: topology v4 rejected; dynamic root v6 held; shared artifact prototype only.
+## Shared TT and low-wall proofs (paper v0.8)
+
+- Source snapshot: `data/phase8-phase9-preliminary.json`
+- Claims: shared-table fixed-depth parity, median speedup and efficiency at two,
+  four, and eight threads, held deployment status, proof states, replay status,
+  certificate hashes, and explicit solver limitations.
+- Status: Phase 8 held pending browser lifecycle validation; Phase 9 partially
+  implemented with exact bounded outcomes but without general low-wall tables.

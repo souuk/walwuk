@@ -1,3 +1,11 @@
+## v0.8 ? 2026-08-16
+
+- Added the native pthread shared-transposition-table prototype and its
+  two-, four-, and eight-thread efficiency screen.
+- Recorded exact move/score/depth parity while holding production deployment
+  below the full parallel-efficiency and browser-lifecycle gates.
+- Added replayable low-wall AND/OR proof certificates for nontrivial win and
+  loss fixtures, with incomplete tablebases kept in future work.
 ## v0.7 ? 2026-08-16
 
 - Added the exact TT cluster-quality correction and preliminary timed screen.
