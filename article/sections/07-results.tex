@@ -59,7 +59,12 @@ The guarded variant reduced summed regret to \GuardedLmrRegret{}, scored
 and scored \GuardedLmrTimedScore{} over \GuardedLmrTimedGames{} games at
 250 ms per move. Those timed games averaged \GuardedLmrTimedAveragePlies{}
 plies. Neither sequential test crossed a promotion boundary, and representative
-timed benchmarks showed no completed-depth gain. The production mask therefore
-remains zero.
+timed benchmarks showed no completed-depth gain. A subsequent one-second
+screen reversed the short-budget result: guarded LMR scored
+\GuardedLmrOneSecondScore{} over \GuardedLmrOneSecondGames{} games, averaging
+\GuardedLmrOneSecondAveragePlies{} plies at an aggregate
+\GuardedLmrOneSecondNps{} NPS. Guarded LMR was rejected at this non-regression
+gate, and the planned five-second screen was not run. The production mask
+therefore remains zero.
 
 \input{generated/selective-validation-table.tex}

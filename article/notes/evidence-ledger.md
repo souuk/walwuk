@@ -27,3 +27,10 @@ The snapshot manifest in `generated/snapshot-manifest.json` records the SHA-256 
   depth-five root regret, resource limits, and inconclusive SPRT status.
 - Status: preliminary; neither candidate is promoted.
 - Raw campaign-summary checksums are embedded in the snapshot.
+
+## Guarded LMR one-second screen (paper v0.5)
+
+- Source snapshot: data/guarded-lmr-one-second-preliminary.json
+- Engine checkpoint: 29302ae
+- Claims: score and color split, plies, nodes, NPS, resource policy, and rejection decision.
+- Status: preliminary result; candidate rejected by the fixed-time non-regression gate.

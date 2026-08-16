@@ -9,6 +9,11 @@ const snapshotPath = path.join(
   "data",
   "selective-validation-preliminary.json",
 );
+const oneSecondPath = path.join(
+  article,
+  "data",
+  "guarded-lmr-one-second-preliminary.json",
+);
 const checkOnly = process.argv.includes("--check");
 
 function command(name, value) {
@@ -31,9 +36,15 @@ async function emit(name, content) {
 }
 
 const bytes = await readFile(snapshotPath);
+const oneSecondBytes = await readFile(oneSecondPath);
 const snapshot = JSON.parse(bytes.toString("utf8"));
+const oneSecond = JSON.parse(oneSecondBytes.toString("utf8"));
 if (snapshot.schemaVersion !== 1 || !snapshot.adaptiveLmr || !snapshot.guardedLmr) {
   throw new Error("Invalid selective-validation evidence snapshot.");
+}
+
+if (oneSecond.schemaVersion !== 1 || oneSecond.millisecondsPerMove !== 1000) {
+  throw new Error("Invalid one-second evidence snapshot.");
 }
 
 const aggressive = snapshot.adaptiveLmr;
@@ -51,6 +62,10 @@ const metrics = [
   command("GuardedLmrTimedScore", `${guarded.fixedTime.candidateWins}--${guarded.fixedTime.baselineWins}`),
   command("GuardedLmrTimedAveragePlies", guarded.fixedTime.averagePlies.toFixed(2)),
   command("GuardedLmrRegret", guarded.rootAudit.candidateTotalRegret),
+  command("GuardedLmrOneSecondGames", oneSecond.games),
+  command("GuardedLmrOneSecondScore", `${oneSecond.candidateWins}--${oneSecond.baselineWins}`),
+  command("GuardedLmrOneSecondAveragePlies", oneSecond.averagePlies.toFixed(2)),
+  command("GuardedLmrOneSecondNps", oneSecond.aggregateNps.toLocaleString("en-US")),
   "",
 ].join("\n");
 
@@ -89,6 +104,12 @@ const manifest = JSON.stringify({
     snapshotId: snapshot.snapshotId,
     status: snapshot.status,
     sha256: createHash("sha256").update(bytes).digest("hex"),
+  },
+  oneSecondSnapshot: {
+    file: path.basename(oneSecondPath),
+    snapshotId: oneSecond.snapshotId,
+    status: oneSecond.status,
+    sha256: createHash("sha256").update(oneSecondBytes).digest("hex"),
   },
 }, null, 2) + "\n";
 

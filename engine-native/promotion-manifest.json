@@ -127,8 +127,8 @@
     },
     "1048576": {
       "name": "guarded adaptive late-move reductions",
-      "status": "held",
-      "reason": "reduced depth-five root regret from 1079 to 1059, led 264-236 at 10000 nodes and 62-38 at 250 ms, but both SPRTs remain inconclusive and representative benchmarks gained no completed depth"
+      "status": "rejected",
+      "reason": "reduced depth-five regret from 1079 to 1059 and led 62-38 at 250 ms, but lost 43-57 over 100 games at one second after representative benchmarks gained no completed depth; rejected for fixed-time non-regression"
     }
   },
   "promotionRequirements": {

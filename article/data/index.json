@@ -15,6 +15,11 @@
       "file": "selective-validation-preliminary.json",
       "status": "preliminary",
       "approved": false
+    },
+    {
+      "file": "guarded-lmr-one-second-preliminary.json",
+      "status": "preliminary",
+      "approved": false
     }
   ]
 }

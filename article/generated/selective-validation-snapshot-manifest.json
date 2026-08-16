@@ -6,5 +6,11 @@
     "snapshotId": "selective-validation-2026-08-15",
     "status": "preliminary",
     "sha256": "dd37ee374f3311b47c0db00c7d031a4f528e1aa1ec868835896d21bc6860c45d"
+  },
+  "oneSecondSnapshot": {
+    "file": "guarded-lmr-one-second-preliminary.json",
+    "snapshotId": "guarded-lmr-one-second-2026-08-15",
+    "status": "preliminary",
+    "sha256": "c3cb68771d0c455275ce07126f16b1010e53abe7123d9d2c1ee03ec77b749edf"
   }
 }

@@ -51,10 +51,15 @@ versus 22 and 16 for baseline. Games averaged 53.36 plies. Both sequential
 tests remain inside their continuation bounds, so these are preliminary
 screens rather than promotion evidence.
 
+A subsequent one-second screen reversed the guarded candidate's short-budget
+result: baseline won 57--43 over 100 games. Guarded won 26 games as periwinkle
+and 17 as blossom; baseline won 33 and 24. Games averaged 53.37 plies, aggregate
+speed was 1,113,128 NPS, and the run completed without worker failures.
+
 ## Promotion status
 
 No LMR variant is enabled in production. Aggressive LMR remains held because
-its deeper search coincides with higher fixed-depth regret. Guarded LMR remains
-experimental: its early fixed-node and fixed-time scores are positive, but the
-sample is below the planned promotion volume and its representative benchmark
-did not improve completed depth at either 250 ms or one second.
+its deeper search coincides with higher fixed-depth regret. Guarded LMR is
+rejected: it failed the one-second non-regression screen after showing no
+representative completed-depth gain. The five-second screen was intentionally
+skipped because the candidate had already failed the cheaper promotion gate.
