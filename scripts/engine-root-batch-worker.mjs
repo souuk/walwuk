@@ -1,8 +1,13 @@
 import { parentPort, workerData } from "node:worker_threads";
 
-import { nativeSearchRootMove } from "./engine-harness.mjs";
+import { nativeAnalyze, nativeSearchRootMove } from "./engine-harness.mjs";
 
 const INFINITY = 1_000_000;
+
+if (workerData.warmDepth > 0) nativeAnalyze(workerData.state, workerData.warmDepth);
+
+// Signal readiness after the persistent worker has loaded its Wasm instance.
+parentPort.postMessage({ ready: true });
 
 parentPort.on("message", ({ id, moves, depth, alpha, fullWindow = false, research = true }) => {
   try {

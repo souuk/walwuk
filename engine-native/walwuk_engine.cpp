@@ -71,8 +71,10 @@ constexpr uint32_t kExperimentAllShortestRoutes = 1U << 17;
 constexpr uint32_t kExperimentTopologyV3 = 1U << 18;
 constexpr uint32_t kExperimentConservativeAdaptiveReductions = 1U << 19;
 constexpr uint32_t kExperimentGuardedAdaptiveReductions = 1U << 20;
+constexpr uint32_t kExperimentPawnTopologyCache = 1U << 21;
 constexpr std::size_t kCorrectionHistorySize = 1U << 12;
 constexpr std::size_t kTopologyCacheSize = 1U << 14;
+constexpr std::size_t kPawnTopologyCacheSize = 1U << 12;
 
 // The first few remaining walls are much more valuable than the last few.
 // This prevents a short horizon from treating a stockpile of ten walls as
@@ -402,6 +404,19 @@ struct TopologyV3Entry {
 };
 
 std::array<TopologyV3Entry, kTopologyCacheSize> topology_v3_cache;
+
+// Unlike the rejected eager topology caches, this cache is admitted only when
+// a pawn continuation requests a path on an unchanged wall graph. Wall-child
+// legality continues using the cheaper witness search unless that topology is
+// subsequently reused by a pawn branch.
+struct PawnTopologyEntry {
+  uint64_t horizontal_walls = 0;
+  uint64_t vertical_walls = 0;
+  std::array<std::array<uint8_t, kSquareCount>, 2> distances{};
+  bool ready = false;
+};
+
+std::array<PawnTopologyEntry, kPawnTopologyCacheSize> pawn_topology_cache;
 uint32_t experiment_mask = 0;
 
 struct MoveList {
@@ -658,6 +673,7 @@ void ClearEngineContext() {
   path_cache.fill({});
   topology_cache.fill({});
   topology_v3_cache.fill({});
+  pawn_topology_cache.fill({});
   zero_wall_cache.fill({});
   transposition_generation = 0;
   active_topology_cache_hits = 0;
@@ -1221,6 +1237,53 @@ int TopologyV3Distance(const Position& position, int player) {
   return entry->distances[player][position.pawns[player]];
 }
 
+std::size_t PawnTopologyIndex(const Position& position) {
+  uint64_t key = position.horizontal_walls * 0x9e3779b97f4a7c15ULL;
+  key ^= position.vertical_walls * 0xbf58476d1ce4e5b9ULL;
+  key ^= key >> 30;
+  return static_cast<std::size_t>(key) & (kPawnTopologyCacheSize - 1);
+}
+
+PawnTopologyEntry& PreparePawnTopology(const Position& position) {
+  PawnTopologyEntry& entry = pawn_topology_cache[PawnTopologyIndex(position)];
+  if (entry.ready && entry.horizontal_walls == position.horizontal_walls &&
+      entry.vertical_walls == position.vertical_walls) {
+    ++active_topology_cache_hits;
+    return entry;
+  }
+  entry.horizontal_walls = position.horizontal_walls;
+  entry.vertical_walls = position.vertical_walls;
+  ComputeTopologyDistances(position, 0, &entry.distances[0]);
+  ComputeTopologyDistances(position, 1, &entry.distances[1]);
+  entry.ready = true;
+  ++active_topology_repairs;
+  return entry;
+}
+
+PathResult PawnTopologyPath(const Position& position, int player) {
+  const PawnTopologyEntry& entry = PreparePawnTopology(position);
+  const auto& distances = entry.distances[player];
+  PathResult result;
+  int current = position.pawns[player];
+  result.distance = distances[current];
+  if (result.distance >= 99) return result;
+  for (int distance = result.distance; distance > 0; --distance) {
+    Bits81 neighbors = Expand(position, SquareBit(current));
+    int next = -1;
+    while (Any(neighbors)) {
+      const int candidate = FirstSquare(neighbors);
+      neighbors.Clear(candidate);
+      if (distances[candidate] == distance - 1) {
+        next = candidate;
+        break;
+      }
+    }
+    if (next < 0) return {};
+    AddBlockingWallCandidates(current, next, &result);
+    current = next;
+  }
+  return result;
+}
 int RecomputeTopologyDistance(
     const Position& position, int square, int player,
     const std::array<uint8_t, kSquareCount>& distances) {
@@ -1727,8 +1790,14 @@ bool PrepareChildPaths(const Position& position, uint16_t move,
   *child_paths = paths;
   if (!IsWallMove(move)) {
     const int moved_player = 1 - position.turn;
-    (*child_paths)[moved_player] =
-        ShortestPath(position, moved_player, all_shortest_paths);
+    if (!all_shortest_paths &&
+        (experiment_mask & kExperimentPawnTopologyCache) != 0) {
+      (*child_paths)[moved_player] =
+          PawnTopologyPath(position, moved_player);
+    } else {
+      (*child_paths)[moved_player] =
+          ShortestPath(position, moved_player, all_shortest_paths);
+    }
     return true;
   }
   SeedChildTopology(position, move);

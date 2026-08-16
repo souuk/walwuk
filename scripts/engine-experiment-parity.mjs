@@ -92,7 +92,7 @@ for (const fixture of fixtures) {
     );
   }
 }
-for (const mask of [1, 16, 262144]) {
+for (const mask of [1, 16, 262144, 2097152]) {
   engine._walwuk_set_experiments(mask);
   for (const fixture of fixtures) {
     assert.deepEqual(
@@ -103,7 +103,7 @@ for (const mask of [1, 16, 262144]) {
   }
 }
 for (const mask of [
-  512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 524288, 1048576,
+  512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 524288, 1048576, 2097152,
 ]) {
   engine._walwuk_set_experiments(mask);
   for (const fixture of fixtures) {
@@ -115,6 +115,20 @@ for (const mask of [
   }
 }
 
+let topologyRandomCount = 0;
+for (const state of iterateRandomPositions(128, 0x544f504f)) {
+  if (winner(state) !== null) continue;
+  engine._walwuk_set_experiments(0);
+  const baseline = comparableResult(analyze(state, 1));
+  engine._walwuk_set_experiments(2097152);
+  assert.deepEqual(
+    comparableResult(analyze(state, 1)),
+    baseline,
+    "topology-v4 random parity differs",
+  );
+  ++topologyRandomCount;
+}
+assert.ok(topologyRandomCount >= 100, "too few topology-v4 random positions");
 const zeroWallState = {
   pawns: [{ r: 6, c: 4 }, { r: 2, c: 4 }],
   walls: [],
@@ -130,7 +144,7 @@ assert.notEqual(winner(replay), null, "proof certificate must reach a goal");
 
 for (const mask of [
   1, 2, 4, 8, 16, 32, 64, 128, 512, 1024, 2048, 4096, 8192,
-  16384, 32768, 65536, 131072, 524288, 1048576,
+  16384, 32768, 65536, 131072, 524288, 1048576, 2097152,
 ]) {
   engine._walwuk_set_experiments(mask);
   const fixed = analyze(fixtures[0].state, 1);

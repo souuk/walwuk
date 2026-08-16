@@ -129,6 +129,11 @@
       "name": "guarded adaptive late-move reductions",
       "status": "rejected",
       "reason": "reduced depth-five regret from 1079 to 1059 and led 62-38 at 250 ms, but lost 43-57 over 100 games at one second after representative benchmarks gained no completed depth; rejected for fixed-time non-regression"
+    },
+    "2097152": {
+      "name": "pawn-triggered topology cache v4",
+      "status": "rejected",
+      "reason": "exact parity passed, but average median NPS fell from 1493621 to 1270222 at 250 ms and from 1477567 to 1239369 at one second; candidate lost one and three aggregate completed plies respectively"
     }
   },
   "promotionRequirements": {
@@ -151,11 +156,20 @@
         "speedup": 4.63,
         "efficiency": 0.579
       },
-      "decision": "The predicted-first null-window prototype is much faster on the opening, but deterministic tie selection requires native ordering metadata and efficiency varies by position; keep production scheduling unchanged."
+      "decision": "Persistent warm workers and stability gating preserved move parity in the guarded matrix, but only the stable opening used dynamic search and reached 23.1% efficiency, below the 60% promotion gate; keep production scheduling unchanged.",
+      "v6": {
+        "depth": 6,
+        "workers": 8,
+        "openingSpeedup": 1.85,
+        "openingEfficiency": 0.231,
+        "unstablePositionFallback": true,
+        "deterministicMoveParity": true
+      }
     },
     "sharedMemoryArtifact": {
       "status": "parity-passed-prototype",
-      "productionEnabled": false
+      "productionEnabled": false,
+      "decision": "The pthread/shared-memory artifact compiles and passes parity, but safe shared TT ownership requires a native threaded runtime rather than independent Wasm instances."
     }
   },
   "compilationResearch": {

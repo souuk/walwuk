@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "phase5-topology-root-2026-08-16",
+  "status": "preliminary",
+  "engineBaseCommit": "8619249",
+  "topologyV4": {
+    "experimentMask": 2097152,
+    "status": "rejected",
+    "milliseconds250": {
+      "baselineDepth": 8.0,
+      "candidateDepth": 7.75,
+      "baselineNps": 1493621,
+      "candidateNps": 1270222
+    },
+    "milliseconds1000": {
+      "baselineDepth": 10.0,
+      "candidateDepth": 9.25,
+      "baselineNps": 1477567,
+      "candidateNps": 1239369
+    }
+  },
+  "dynamicRootV6": {
+    "status": "held",
+    "depth": 6,
+    "eligibleWorkers": 8,
+    "positions": [
+      {
+        "name": "opening",
+        "mode": "dynamic",
+        "serialMs": 1803,
+        "scheduledMs": 977,
+        "speedup": 1.85,
+        "efficiency": 0.231,
+        "moveParity": true
+      },
+      {
+        "name": "channelled routes",
+        "mode": "serial fallback",
+        "serialMs": 2414,
+        "scheduledMs": 2414,
+        "speedup": 1.0,
+        "efficiency": 1.0,
+        "moveParity": true
+      },
+      {
+        "name": "transposition rich",
+        "mode": "serial fallback",
+        "serialMs": 2125,
+        "scheduledMs": 2125,
+        "speedup": 1.0,
+        "efficiency": 1.0,
+        "moveParity": true
+      }
+    ],
+    "promotionEfficiencyTarget": 0.6
+  },
+  "sharedMemoryArtifact": {
+    "status": "parity-passed-prototype",
+    "productionEnabled": false
+  }
+}

@@ -23,7 +23,7 @@ const maxDepth = Math.max(1, Number.parseInt(option("max-depth", "20"), 10));
 const trials = Math.max(1, Number.parseInt(option("trials", "3"), 10));
 const masks = option(
   "masks",
-  "0,1,2,4,8,16,32,64,128,512,1024,2048,4096,8192,16384,32768,65536,131072,262144,524288,1048576",
+  "0,1,2,4,8,16,32,64,128,512,1024,2048,4096,8192,16384,32768,65536,131072,262144,524288,1048576,2097152",
 )
   .split(",")
   .map((value) => Number.parseInt(value, 10));

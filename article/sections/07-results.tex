@@ -68,3 +68,25 @@ gate, and the planned five-second screen was not run. The production mask
 therefore remains zero.
 
 \input{generated/selective-validation-table.tex}
+
+\subsection{Topology and root scheduling}
+The pawn-triggered topology design preserved exact fixture parity but reduced
+one-second median NPS from \TopologyVFourBaselineNps{} to
+\TopologyVFourCandidateNps{} and average completed depth from
+\TopologyVFourBaselineDepth{} to \TopologyVFourCandidateDepth{}. It was
+rejected because constructing two reverse fields still cost more than the
+saved pawn-path searches.
+
+The sixth dynamic-root prototype uses persistent warm workers, PV-first work,
+score-volatility gating, and an exact serial fallback. At depth six, the stable
+opening improved by \DynamicRootOpeningSpeedup$\times$ with
+\DynamicRootWorkers{} workers, but parallel efficiency was only
+\DynamicRootOpeningEfficiency\%. Unstable fixtures used the serial fallback;
+an ungated run had previously exposed an equal-score tie divergence and severe
+over-search. The guarded scheduler remains held below the 60\% gate.
+
+The shared-memory Wasm artifact compiled and passed parity, but is not enabled.
+Independent Emscripten instances cannot safely share their entire linear memory;
+a native threaded runtime and explicitly shared caches remain future work.
+
+\input{generated/phase-five-root-table.tex}

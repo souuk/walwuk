@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": "scripts/article-generate-phase5.mjs",
+  "snapshot": {
+    "file": "phase5-topology-root-preliminary.json",
+    "snapshotId": "phase5-topology-root-2026-08-16",
+    "status": "preliminary",
+    "sha256": "a610e425caa71f192f528ca2c9f35e0aae9fa49ea205d9a490947b5b88255f38"
+  }
+}

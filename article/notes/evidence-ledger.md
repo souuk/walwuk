@@ -34,3 +34,11 @@ The snapshot manifest in `generated/snapshot-manifest.json` records the SHA-256 
 - Engine checkpoint: 29302ae
 - Claims: score and color split, plies, nodes, NPS, resource policy, and rejection decision.
 - Status: preliminary result; candidate rejected by the fixed-time non-regression gate.
+
+## Topology and root scheduling (paper v0.6)
+
+- Source snapshot: data/phase5-topology-root-preliminary.json
+- Engine base checkpoint: 8619249
+- Claims: topology-v4 depth/NPS regression, dynamic-root depth-six timing,
+  stability fallback, efficiency, parity, and shared-artifact status.
+- Status: topology v4 rejected; dynamic root v6 held; shared artifact prototype only.

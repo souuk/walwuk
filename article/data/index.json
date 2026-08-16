@@ -20,6 +20,11 @@
       "file": "guarded-lmr-one-second-preliminary.json",
       "status": "preliminary",
       "approved": false
+    },
+    {
+      "file": "phase5-topology-root-preliminary.json",
+      "status": "preliminary",
+      "approved": false
     }
   ]
 }

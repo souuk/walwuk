@@ -58,10 +58,12 @@
     "engine:solve:low-wall": "npm run engine:test:compile && node scripts/engine-low-wall-solver.mjs",
     "walper:build": "npm run engine:build && node walper/build.mjs",
     "walper:test": "node --test walper/tests/*.test.mjs",
-    "article:generate": "node scripts/article-generate.mjs && node scripts/article-generate-phase3.mjs && node scripts/article-generate-selective-validation.mjs",
+    "article:generate": "node scripts/article-generate.mjs && node scripts/article-generate-phase3.mjs && node scripts/article-generate-selective-validation.mjs && node scripts/article-generate-phase5.mjs",
     "article:build": "node scripts/article-build.mjs",
     "article:check": "node scripts/article-check.mjs",
-    "article:package": "node scripts/article-package.mjs"
+    "article:package": "node scripts/article-package.mjs",
+    "engine:test:shared-experiment": "npm run engine:build:shared-experiment && npm run engine:test:compile && node scripts/engine-experiment-parity.mjs --module outputs/shared-engine/walwuk-engine.mjs",
+    "engine:benchmark:dynamic-root-v6": "npm run engine:build && npm run engine:test:compile && node scripts/engine-dynamic-root-v6-benchmark.mjs"
   },
   "dependencies": {
     "react": "19.2.6",
