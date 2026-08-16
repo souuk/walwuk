@@ -41,4 +41,14 @@ The snapshot manifest in `generated/snapshot-manifest.json` records the SHA-256 
 - Engine base checkpoint: 8619249
 - Claims: topology-v4 depth/NPS regression, dynamic-root depth-six timing,
   stability fallback, efficiency, parity, and shared-artifact status.
+
+## Exact TT and dynamic root v7 (paper v0.7)
+
+- Source snapshot: `data/phase6-phase7-preliminary.json`
+- Base engine checkpoint: `f4f951e`
+- Artifact SHA-256: `4423e941f282aabf0c086c6cf9fd040d1b070f16fcb4e0cb2e593c9f2b1c58c6`
+- Claims: exact TT cluster correction, preliminary 250 ms/one-second depth and
+  NPS totals, seed-first root timings, worker efficiency, re-search counts, and
+  move parity.
+- Status: Phase 6 retained; Phase 7 held below the 60% efficiency gate.
 - Status: topology v4 rejected; dynamic root v6 held; shared artifact prototype only.

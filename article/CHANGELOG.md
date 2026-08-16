@@ -1,3 +1,10 @@
+## v0.7 ? 2026-08-16
+
+- Added the exact TT cluster-quality correction and preliminary timed screen.
+- Added seed-first dynamic-root v7 measurements at two, four, and eight workers.
+- Recorded the large reduction in speculative root re-searches without claiming
+  that the scheduler passed its 60% efficiency promotion gate.
+
 ## v0.6 â€” 2026-08-16
 
 - Added the rejected pawn-triggered topology-cache experiment.

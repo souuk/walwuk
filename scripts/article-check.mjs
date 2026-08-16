@@ -47,6 +47,14 @@ if (selectiveGenerator.status !== 0) {
     selectiveGenerator.stdout.trim() ||
     "Selective-validation generated files are stale.");
 }
+const phaseSixSevenGenerator = spawnSync(process.execPath, [
+  path.join(root, "scripts", "article-generate-phase67.mjs"), "--check"
+], {cwd: root, encoding: "utf8"});
+if (phaseSixSevenGenerator.status !== 0) {
+  errors.push(phaseSixSevenGenerator.stderr.trim() ||
+    phaseSixSevenGenerator.stdout.trim() ||
+    "Phase 6/7 generated files are stale.");
+}
 const phaseFiveGenerator = spawnSync(process.execPath, [
   path.join(root, "scripts", "article-generate-phase5.mjs"), "--check"
 ], {cwd: root, encoding: "utf8"});

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "engineVersion": "phase3.0-dev",
+  "engineVersion": "phase3.1-dev",
   "production": {
     "experimentMask": 0,
     "evaluator": "handcrafted-v2",
@@ -9,7 +9,9 @@
       "persistentAcrossSearches": true,
       "exactPositionVerification": true,
       "reuseDeeperEntriesInTimedSearch": true,
-      "strictFixedDepthParity": true
+      "strictFixedDepthParity": true,
+      "clusterWideMatchBeforeReplacement": true,
+      "timedShallowMoveOrdering": true
     },
     "solvers": {
       "zeroWallRoot": true,
@@ -156,7 +158,7 @@
         "speedup": 4.63,
         "efficiency": 0.579
       },
-      "decision": "Persistent warm workers and stability gating preserved move parity in the guarded matrix, but only the stable opening used dynamic search and reached 23.1% efficiency, below the 60% promotion gate; keep production scheduling unchanged.",
+      "decision": "Seed-first v7 reduced speculative opening re-searches from 56 to 4 and preserved parity, but eight-worker efficiency was 25.7%, below the 60% promotion gate; keep production scheduling unchanged.",
       "v6": {
         "depth": 6,
         "workers": 8,
@@ -164,6 +166,24 @@
         "openingEfficiency": 0.231,
         "unstablePositionFallback": true,
         "deterministicMoveParity": true
+      },
+      "v7": {
+        "depth": 6,
+        "minimumPriorIterationMs": 75,
+        "productionEnabled": false,
+        "opening": [
+          {"workers": 2, "speedup": 0.93, "efficiency": 0.465},
+          {"workers": 4, "speedup": 1.42, "efficiency": 0.355},
+          {"workers": 8, "speedup": 2.06, "efficiency": 0.257}
+        ],
+        "v6RepeatedMoves": 56,
+        "v7RepeatedMoves": 4,
+        "moveParity": true,
+        "serialFallback": [
+          "channelled routes",
+          "low reserves",
+          "transposition rich"
+        ]
       }
     },
     "sharedMemoryArtifact": {

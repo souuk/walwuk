@@ -47,7 +47,7 @@ constexpr int kMaximumRaceExtensions = 2;
 constexpr int kPawnStateCount = kSquareCount * kSquareCount * 2;
 constexpr std::size_t kZeroWallCacheSize = 64;
 constexpr uint64_t kHashSeed = 0x6a09e667f3bcc909ULL;
-constexpr const char* kEngineVersion = "phase3.0-dev";
+constexpr const char* kEngineVersion = "phase3.1-dev";
 constexpr const char* kEvaluatorVersion = "handcrafted-v2";
 constexpr const char* kPolicyVersion = "history-v1";
 constexpr uint32_t kExperimentTopologyCache = 1U << 0;
@@ -2533,23 +2533,33 @@ class Search {
     TranspositionCluster& cluster =
         transposition_table[PositionIndex(canonical)];
     const uint8_t search_mode = static_cast<uint8_t>(mode_);
-    TranspositionEntry* replacement = &cluster.entries[0];
+    TranspositionEntry* replacement = nullptr;
+    // Find an existing entry before considering an empty slot. Stopping at the
+    // first empty slot could create duplicate entries when an older matching
+    // position appeared later in the cluster, wasting capacity and weakening
+    // replacement decisions.
     for (TranspositionEntry& candidate : cluster.entries) {
       if (SamePosition(candidate, canonical, search_mode)) {
         replacement = &candidate;
         break;
       }
-      if (candidate.generation == 0) {
-        replacement = &candidate;
-        break;
+    }
+    if (replacement == nullptr) {
+      replacement = &cluster.entries[0];
+      for (TranspositionEntry& candidate : cluster.entries) {
+        if (candidate.generation == 0) {
+          replacement = &candidate;
+          break;
+        }
+        const int candidate_value =
+            candidate.depth + (candidate.bound == Bound::kExact ? 4 : 0) -
+            (candidate.generation == transposition_generation ? 0 : 16);
+        const int replacement_value =
+            replacement->depth +
+            (replacement->bound == Bound::kExact ? 4 : 0) -
+            (replacement->generation == transposition_generation ? 0 : 16);
+        if (candidate_value < replacement_value) replacement = &candidate;
       }
-      const int candidate_value =
-          candidate.depth -
-          (candidate.generation == transposition_generation ? 0 : 16);
-      const int replacement_value =
-          replacement->depth -
-          (replacement->generation == transposition_generation ? 0 : 16);
-      if (candidate_value < replacement_value) replacement = &candidate;
     }
     TranspositionEntry& entry = *replacement;
     if (SamePosition(entry, canonical, search_mode) &&
@@ -3005,9 +3015,11 @@ class Search {
         *position, paths, mode_, ply == 0,
         split_root ? root_index_ : -1, split_root ? root_count_ : 1,
         ply == 0 && IsLeftRightSymmetric(*position));
-    OrderMoves(*position, &moves,
-               has_exact_transposition ? cached_move : kNoMove,
-               paths, ply, previous_move);
+    // A shallow entry cannot provide a score bound at this horizon, but its
+    // best move is still exact ordering information from the same position.
+    const uint16_t ordering_move = !strict_horizon_ || has_exact_transposition
+                                       ? cached_move : kNoMove;
+    OrderMoves(*position, &moves, ordering_move, paths, ply, previous_move);
     if (moves.count == 0) {
       if (ply == 0) root_best_move_ = kNoMove;
       return StaticEvaluation(*position, paths);

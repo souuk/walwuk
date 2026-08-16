@@ -90,3 +90,29 @@ Independent Emscripten instances cannot safely share their entire linear memory;
 a native threaded runtime and explicitly shared caches remain future work.
 
 \input{generated/phase-five-root-table.tex}
+\subsection{Exact TT quality and dynamic-root v7}
+Phase 6 corrected clustered TT admission so a matching packed position is
+found before an earlier empty slot can create a duplicate. Exact bounds receive
+a small replacement preference. Timed search can use a shallow entry's move for
+ordering without using its score; strict fixed-depth mode remains isolated from
+this cross-search ordering signal. The standard parity screen again reported
+zero mismatches.
+
+The one-second ten-position screen preserved the aggregate exhaustive depth and
+increased aggregate selective depth from \PhaseSixBaselineSelectiveDepth{} to
+\PhaseSixCandidateSelectiveDepth{}. Mean NPS moved slightly downward in that
+single run, while the 250 ms run moved slightly upward. The change is retained
+for the exact cluster-capacity correction, but these wall-clock results remain
+preliminary rather than evidence of a stable speed gain.
+
+Dynamic-root v7 removes the speculative prescreen and first establishes one
+exact incumbent. Alternatives are distributed with zero windows, while every
+tie or fail-high receives a full-window re-search. The recorded eight-worker
+opening improved by \PhaseSevenOpeningSpeedup$\times$ and reduced repeated root
+searches from \PhaseSevenPriorRepeatedMoves{} to
+\PhaseSevenRepeatedMoves{}. Its \PhaseSevenOpeningEfficiency\% efficiency
+still failed the 60\% gate, and a two-worker run was slower than serial search.
+Cheap or unstable iterations now use exact serial fallback. The scheduler
+therefore remains held and is not connected to the browser or extension.
+
+\input{generated/phase-seven-root-table.tex}

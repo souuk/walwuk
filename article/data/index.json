@@ -25,6 +25,11 @@
       "file": "phase5-topology-root-preliminary.json",
       "status": "preliminary",
       "approved": false
+    },
+    {
+      "file": "phase6-phase7-preliminary.json",
+      "status": "preliminary",
+      "approved": false
     }
   ]
 }

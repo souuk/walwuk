@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "phase6-phase7-2026-08-16",
+  "status": "preliminary",
+  "engineBaseCommit": "f4f951ebb83aabbac3f10d66ccaea447489a96f7",
+  "artifactSha256": "4423e941f282aabf0c086c6cf9fd040d1b070f16fcb4e0cb2e593c9f2b1c58c6",
+  "phase6": {
+    "status": "retained-exact-preliminary-performance",
+    "changes": [
+      "cluster-wide matching before empty-slot replacement",
+      "exact-bound replacement preference",
+      "shallow TT move ordering in timed search only"
+    ],
+    "parity": {
+      "fixtures": 10,
+      "randomPositions": 250,
+      "maximumDepth": 2,
+      "mismatches": 0
+    },
+    "timed": [
+      {
+        "milliseconds": 250,
+        "baselineExhaustiveDepthTotal": 81,
+        "candidateExhaustiveDepthTotal": 80,
+        "baselineSelectiveDepthTotal": 101,
+        "candidateSelectiveDepthTotal": 102,
+        "baselineExhaustiveNpsMean": 4217474,
+        "candidateExhaustiveNpsMean": 4413268,
+        "baselineSelectiveNpsMean": 1664778,
+        "candidateSelectiveNpsMean": 1705815
+      },
+      {
+        "milliseconds": 1000,
+        "baselineExhaustiveDepthTotal": 83,
+        "candidateExhaustiveDepthTotal": 83,
+        "baselineSelectiveDepthTotal": 111,
+        "candidateSelectiveDepthTotal": 112,
+        "baselineExhaustiveNpsMean": 2406010,
+        "candidateExhaustiveNpsMean": 2376130,
+        "baselineSelectiveNpsMean": 1529717,
+        "candidateSelectiveNpsMean": 1504251
+      }
+    ]
+  },
+  "phase7": {
+    "status": "held",
+    "depth": 6,
+    "minimumPriorIterationMs": 75,
+    "opening": [
+      {
+        "workers": 2,
+        "serialMs": 1695,
+        "scheduledMs": 1824,
+        "speedup": 0.93,
+        "efficiency": 0.465,
+        "researches": 2,
+        "moveParity": true
+      },
+      {
+        "workers": 4,
+        "serialMs": 1663,
+        "scheduledMs": 1171,
+        "speedup": 1.42,
+        "efficiency": 0.355,
+        "researches": 3,
+        "moveParity": true
+      },
+      {
+        "workers": 8,
+        "serialMs": 1724,
+        "scheduledMs": 838,
+        "speedup": 2.06,
+        "efficiency": 0.257,
+        "researches": 4,
+        "moveParity": true
+      }
+    ],
+    "v6OpeningRepeatedMoves": 56,
+    "promotionEfficiencyTarget": 0.6,
+    "productionEnabled": false
+  }
+}
